@@ -8,16 +8,33 @@ on:
     - cron: '0 12 * * *'
     - cron: '0 18 * * *'
 
-  # Permite hacer pruebas manualmente
+  # Permite ejecutar manualmente desde GitHub
   workflow_dispatch:
+
+# Permitir que GitHub Actions pueda guardar
+# los cambios realizados en videos_virales.csv
+permissions:
+  contents: write
 
 jobs:
   bot:
+
     runs-on: ubuntu-latest
 
     steps:
+
+      # =====================================================
+      # DESCARGAR REPOSITORIO
+      # =====================================================
+
       - name: Descargar repositorio
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # =====================================================
+      # INSTALAR NODE.JS
+      # =====================================================
 
       - name: Instalar Node.js
         uses: actions/setup-node@v4
@@ -25,13 +42,43 @@ jobs:
           node-version: 20
           cache: npm
 
+      # =====================================================
+      # INSTALAR DEPENDENCIAS
+      # =====================================================
+
       - name: Instalar dependencias
         run: npm ci
 
+      # =====================================================
+      # INSTALAR CHROMIUM
+      # =====================================================
+
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium
+
+      # =====================================================
+      # EJECUTAR BOT
+      # =====================================================
 
       - name: Ejecutar bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: node main.js
+
+      # =====================================================
+      # GUARDAR CSV EN GITHUB
+      # =====================================================
+
+      - name: Guardar vídeos publicados
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add videos_virales.csv
+
+          if git diff --cached --quiet; then
+            echo "No hay cambios en videos_virales.csv"
+          else
+            git commit -m "Actualizar vídeos publicados"
+            git push
+          fi
