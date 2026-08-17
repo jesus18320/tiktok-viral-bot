@@ -1,6 +1,14 @@
 name: TikTok Viral Bot
 
 on:
+  # 08:00, 14:00 y 20:00 hora peninsular española
+  # En verano España está en UTC+2
+  schedule:
+    - cron: '0 6 * * *'
+    - cron: '0 12 * * *'
+    - cron: '0 18 * * *'
+
+  # Permite hacer pruebas manualmente
   workflow_dispatch:
 
 jobs:
@@ -15,12 +23,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Instalar navegador Playwright
-        run: npx playwright install chromium
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Ejecutar bot
         env:
