@@ -1,40 +1,21 @@
 name: TikTok Viral Bot
 
 on:
-  # 08:00, 14:00 y 20:00 hora peninsular española
-  # En verano España está en UTC+2
-  schedule:
-    - cron: '0 6 * * *'
-    - cron: '0 12 * * *'
-    - cron: '0 18 * * *'
-
-  # Permite ejecutar manualmente desde GitHub
   workflow_dispatch:
 
-# Permitir que GitHub Actions pueda guardar
-# los cambios realizados en videos_virales.csv
-permissions:
-  contents: write
+concurrency:
+  group: tiktok-viral-bot
+  cancel-in-progress: false
 
 jobs:
   bot:
-
     runs-on: ubuntu-latest
 
     steps:
-
-      # =====================================================
-      # DESCARGAR REPOSITORIO
-      # =====================================================
-
       - name: Descargar repositorio
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # =====================================================
-      # INSTALAR NODE.JS
-      # =====================================================
 
       - name: Instalar Node.js
         uses: actions/setup-node@v4
@@ -42,32 +23,16 @@ jobs:
           node-version: 20
           cache: npm
 
-      # =====================================================
-      # INSTALAR DEPENDENCIAS
-      # =====================================================
-
       - name: Instalar dependencias
         run: npm ci
 
-      # =====================================================
-      # INSTALAR CHROMIUM
-      # =====================================================
-
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium
-
-      # =====================================================
-      # EJECUTAR BOT
-      # =====================================================
 
       - name: Ejecutar bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: node main.js
-
-      # =====================================================
-      # GUARDAR CSV EN GITHUB
-      # =====================================================
 
       - name: Guardar vídeos publicados
         run: |
@@ -77,8 +42,12 @@ jobs:
           git add videos_virales.csv
 
           if git diff --cached --quiet; then
-            echo "No hay cambios en videos_virales.csv"
-          else
-            git commit -m "Actualizar vídeos publicados"
-            git push
+            echo "No hay cambios que guardar."
+            exit 0
           fi
+
+          git commit -m "Actualizar vídeos publicados"
+
+          git pull --rebase origin main
+
+          git push origin main
