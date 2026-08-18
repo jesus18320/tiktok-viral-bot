@@ -112,7 +112,6 @@ import TelegramBot from 'node-telegram-bot-api';
 // =====================================================
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
 const CHANNEL_ID = '@videos_risas';
 
 const MAX_VIDEOS = 2;
@@ -120,7 +119,9 @@ const MAX_VIDEOS = 2;
 const CSV_FILE = 'videos_virales.csv';
 const DOWNLOAD_DIR = 'videos_temp';
 
-const MIN_VIDEO_BYTES = 10000;
+// Tamaño mínimo aceptado para una respuesta de vídeo.
+// 100 KB evita guardar respuestas pequeñas/incompletas.
+const MIN_VIDEO_BYTES = 100 * 1024;
 
 if (!TOKEN) {
     console.error(
@@ -152,33 +153,30 @@ const videosGuardados = new Set();
 
 if (fs.existsSync(CSV_FILE)) {
 
-    const data =
-        fs.readFileSync(
-            CSV_FILE,
-            'utf8'
-        );
+    const data = fs.readFileSync(
+        CSV_FILE,
+        'utf8'
+    );
 
-    const lineas =
-        data
-            .split(/\r?\n/)
-            .slice(1);
+    const lineas = data
+        .split(/\r?\n/)
+        .slice(1);
 
     for (const linea of lineas) {
 
         const separador =
             linea.indexOf(',');
 
-        if (separador === -1) {
-            continue;
-        }
+        if (separador !== -1) {
 
-        const url =
-            linea
-                .slice(separador + 1)
-                .trim();
+            const url =
+                linea
+                    .slice(separador + 1)
+                    .trim();
 
-        if (url) {
-            videosGuardados.add(url);
+            if (url) {
+                videosGuardados.add(url);
+            }
         }
     }
 }
@@ -227,7 +225,7 @@ function limpiarTitulo(titulo) {
 }
 
 // =====================================================
-// ENVIAR A TELEGRAM
+// ENVIAR VÍDEO A TELEGRAM
 // =====================================================
 
 async function enviarTelegram(
@@ -274,149 +272,42 @@ async function enviarTelegram(
 }
 
 // =====================================================
-// GUARDAR BUFFER DE VÍDEO
+// GUARDAR RESPUESTA DE VÍDEO
 // =====================================================
 
-function guardarBufferVideo(
-    buffer,
+async function guardarRespuestaVideo(
+    response,
     archivo
 ) {
 
     try {
 
-        if (
-            !buffer ||
-            !Buffer.isBuffer(buffer)
-        ) {
-
-            console.log(
-                '❌ El contenido recibido no es un Buffer válido.'
-            );
-
-            return false;
-        }
-
-        if (
-            buffer.length <
-            MIN_VIDEO_BYTES
-        ) {
-
-            console.log(
-                `⏭️ Vídeo demasiado pequeño: ${buffer.length} bytes`
-            );
-
-            return false;
-        }
-
-        fs.writeFileSync(
-            archivo,
-            buffer
-        );
-
-        console.log(
-            `💾 Vídeo guardado: ` +
-            `${(
-                buffer.length /
-                1024 /
-                1024
-            ).toFixed(2)} MB`
-        );
-
-        return true;
-
-    } catch (error) {
-
-        console.error(
-            '❌ Error guardando vídeo:',
-            error.message
-        );
-
-        return false;
-    }
-}
-
-// =====================================================
-// CAPTURAR RESPUESTA DE VÍDEO INMEDIATAMENTE
-// =====================================================
-
-async function capturarRespuestaVideo(
-    response
-) {
-
-    try {
-
         if (!response.ok()) {
-            return null;
+            return false;
         }
 
         const headers =
             response.headers();
 
         const contentType =
-            (
-                headers['content-type'] ||
-                ''
-            ).toLowerCase();
-
-        if (
-            !contentType.includes('video/')
-        ) {
-            return null;
-        }
+            headers['content-type'] || '';
 
         const contentLength =
             Number(
-                headers['content-length'] ||
-                0
+                headers['content-length'] || 0
             );
 
-        /*
-         * MUY IMPORTANTE:
-         *
-         * Leemos response.body() AQUÍ,
-         * inmediatamente cuando llega la respuesta.
-         *
-         * No guardamos el objeto response
-         * para utilizarlo después.
-         */
-
-        let buffer;
-
-        try {
-
-            buffer =
-                await response.body();
-
-        } catch (error) {
-
-            console.log(
-                '⚠️ No se pudo leer el cuerpo de la respuesta: ' +
-                error.message
-            );
-
-            return null;
-        }
-
+        // Solo aceptar contenido de vídeo
         if (
-            !buffer ||
-            buffer.length <
-            MIN_VIDEO_BYTES
+            !contentType.toLowerCase().includes(
+                'video/'
+            )
         ) {
-
-            console.log(
-                `⏭️ Respuesta de vídeo pequeña descartada: ` +
-                `${buffer?.length || 0} bytes`
-            );
-
-            return null;
+            return false;
         }
 
         console.log(
-            `🎥 Vídeo de red capturado: ${contentType}`
-        );
-
-        console.log(
-            `📦 Tamaño capturado: ${buffer.length} bytes`
+            `🎥 Respuesta de vídeo detectada: ${contentType}`
         );
 
         if (contentLength > 0) {
@@ -429,22 +320,79 @@ async function capturarRespuestaVideo(
                     1024
                 ).toFixed(2)} MB`
             );
+
+            if (
+                contentLength <
+                MIN_VIDEO_BYTES
+            ) {
+
+                console.log(
+                    `⏭️ Respuesta demasiado pequeña ` +
+                    `(${contentLength} bytes). Se descarta.`
+                );
+
+                return false;
+            }
         }
 
-        return {
-            buffer,
-            contentType,
-            contentLength
-        };
+        const buffer =
+            await response.body();
+
+        if (
+            !buffer ||
+            buffer.length <
+            MIN_VIDEO_BYTES
+        ) {
+
+            console.log(
+                `⏭️ Vídeo demasiado pequeño ` +
+                `(${buffer?.length || 0} bytes). Se descarta.`
+            );
+
+            return false;
+        }
+
+        // Comprobar que parece MP4
+        const cabecera =
+            buffer
+                .subarray(0, 32)
+                .toString('ascii');
+
+        if (
+            !cabecera.includes('ftyp')
+        ) {
+
+            console.log(
+                '⚠️ La respuesta no contiene firma MP4.'
+            );
+
+            return false;
+        }
+
+        fs.writeFileSync(
+            archivo,
+            buffer
+        );
+
+        console.log(
+            `✅ Vídeo guardado: ` +
+            `${(
+                buffer.length /
+                1024 /
+                1024
+            ).toFixed(2)} MB`
+        );
+
+        return true;
 
     } catch (error) {
 
-        console.log(
-            '⚠️ Error capturando respuesta de vídeo:',
+        console.error(
+            '❌ Error guardando respuesta:',
             error.message
         );
 
-        return null;
+        return false;
     }
 }
 
@@ -458,8 +406,8 @@ async function capturarVirales() {
         '\n🚀 Buscando vídeos virales...'
     );
 
-    let browser = null;
-    let context = null;
+    let browser;
+    let context;
 
     try {
 
@@ -498,14 +446,7 @@ async function capturarVirales() {
             new Map();
 
         // =================================================
-        // COLA DE VÍDEOS CAPTURADOS
-        // =================================================
-
-        const videosCapturados =
-            [];
-
-        // =================================================
-        // RESPUESTAS DE API DE TIKTOK
+        // RESPUESTAS API DE TIKTOK
         // =================================================
 
         page.on(
@@ -515,16 +456,9 @@ async function capturarVirales() {
                 const url =
                     response.url();
 
-                /*
-                 * TikTok puede cambiar ligeramente
-                 * sus endpoints. Buscamos item_list
-                 * en lugar de depender únicamente
-                 * de una URL exacta.
-                 */
-
                 if (
                     !url.includes(
-                        'item_list'
+                        '/api/recommend/item_list'
                     )
                 ) {
                     return;
@@ -549,51 +483,56 @@ async function capturarVirales() {
                     ) {
 
                         if (
-                            !item?.author?.uniqueId ||
-                            !item?.id
-                        ) {
-                            continue;
-                        }
-
-                        const videoUrl =
-                            `https://www.tiktok.com/@` +
-                            `${item.author.uniqueId}` +
-                            `/video/${item.id}`;
-
-                        const titulo =
-                            item.desc ||
-                            item.description ||
-                            item.title ||
-                            'Vídeo viral';
-
-                        if (
-                            !videos.has(
-                                videoUrl
-                            )
+                            item?.author?.uniqueId &&
+                            item?.id
                         ) {
 
-                            videos.set(
-                                videoUrl,
-                                {
-                                    url:
-                                        videoUrl,
+                            const videoUrl =
+                                `https://www.tiktok.com/@` +
+                                `${item.author.uniqueId}` +
+                                `/video/${item.id}`;
 
-                                    title:
-                                        limpiarTitulo(
-                                            titulo
-                                        )
-                                }
-                            );
+                            const titulo =
+                                item.desc ||
+                                item.description ||
+                                item.title ||
+                                'Vídeo viral';
 
-                            console.log(
-                                `📝 Vídeo detectado: ` +
-                                `${limpiarTitulo(titulo)}`
-                            );
+                            if (
+                                !videos.has(
+                                    videoUrl
+                                )
+                            ) {
+
+                                videos.set(
+                                    videoUrl,
+                                    {
+                                        url:
+                                            videoUrl,
+
+                                        title:
+                                            limpiarTitulo(
+                                                titulo
+                                            ),
+
+                                        videoResponse:
+                                            null,
+
+                                        videoSize:
+                                            0
+                                    }
+                                );
+
+                                console.log(
+                                    `📝 Vídeo detectado: ` +
+                                    `${limpiarTitulo(titulo)}`
+                                );
+                            }
                         }
                     }
 
                 } catch {
-                    // Algunas respuestas no son JSON.
+                    // Ignorar respuestas que no sean JSON válido
                 }
             }
         );
@@ -608,45 +547,81 @@ async function capturarVirales() {
 
                 try {
 
-                    const resultado =
-                        await capturarRespuestaVideo(
-                            response
+                    const headers =
+                        response.headers();
+
+                    const contentType =
+                        headers[
+                            'content-type'
+                        ] || '';
+
+                    if (
+                        !contentType
+                            .toLowerCase()
+                            .includes('video/')
+                    ) {
+                        return;
+                    }
+
+                    if (!response.ok()) {
+                        return;
+                    }
+
+                    const contentLength =
+                        Number(
+                            headers[
+                                'content-length'
+                            ] || 0
                         );
 
-                    if (!resultado) {
+                    /*
+                     * Ignorar respuestas demasiado pequeñas.
+                     */
+
+                    if (
+                        contentLength > 0 &&
+                        contentLength <
+                        MIN_VIDEO_BYTES
+                    ) {
+
+                        console.log(
+                            `⏭️ Respuesta de vídeo pequeña ` +
+                            `descartada: ${contentLength} bytes`
+                        );
+
                         return;
                     }
 
                     /*
-                     * MUY IMPORTANTE:
-                     *
-                     * El Buffer ya está completamente
-                     * leído aquí.
-                     *
-                     * Por tanto no dependemos de
-                     * response.body() más adelante.
+                     * Buscar un vídeo detectado que todavía
+                     * no tenga una respuesta suficientemente grande.
                      */
 
-                    videosCapturados.push({
-                        buffer:
-                            resultado.buffer,
+                    for (
+                        const video
+                        of videos.values()
+                    ) {
 
-                        contentType:
-                            resultado.contentType,
+                        if (
+                            !video.videoResponse
+                        ) {
 
-                        contentLength:
-                            resultado.contentLength,
+                            video.videoResponse =
+                                response;
 
-                        url:
-                            response.url()
-                    });
+                            video.videoSize =
+                                contentLength;
 
-                } catch (error) {
+                            console.log(
+                                '🎥 Vídeo de red capturado'
+                            );
 
-                    console.log(
-                        '⚠️ Error procesando vídeo de red:',
-                        error.message
-                    );
+                            break;
+                        }
+                    }
+
+                } catch {
+                    // Ignorar errores individuales
                 }
             }
         );
@@ -679,13 +654,13 @@ async function capturarVirales() {
         // =================================================
 
         for (
-            let i = 1;
-            i <= 8;
+            let i = 0;
+            i < 8;
             i++
         ) {
 
             console.log(
-                `📜 Scroll ${i}/8`
+                `📜 Scroll ${i + 1}/8`
             );
 
             await page.mouse.wheel(
@@ -707,23 +682,11 @@ async function capturarVirales() {
         );
 
         await page.waitForTimeout(
-            5000
+            6000
         );
 
         // =================================================
-        // RESULTADOS
-        // =================================================
-
-        console.log(
-            `🎯 Vídeos detectados en TikTok: ${videos.size}`
-        );
-
-        console.log(
-            `🎥 Vídeos MP4 completos capturados: ${videosCapturados.length}`
-        );
-
-        // =================================================
-        // FILTRAR VÍDEOS NUEVOS
+        // LISTA DE VÍDEOS NUEVOS
         // =================================================
 
         const lista =
@@ -746,17 +709,32 @@ async function capturarVirales() {
             `🎯 Nuevos vídeos encontrados: ${lista.length}`
         );
 
-        if (!lista.length) {
+        // =================================================
+        // INFORMACIÓN DE CAPTURAS
+        // =================================================
 
+        for (
+            const video
+            of lista
+        ) {
+
+            console.log('');
             console.log(
-                'ℹ️ No hay vídeos nuevos para publicar.'
+                `📝 ${video.title}`
             );
 
-            return;
+            console.log(
+                `🔗 ${video.url}`
+            );
+
+            console.log(
+                `📦 Tamaño capturado: ` +
+                `${video.videoSize || 0} bytes`
+            );
         }
 
         // =================================================
-        // PREPARAR CSV
+        // CSV
         // =================================================
 
         let csv;
@@ -779,22 +757,60 @@ async function capturarVirales() {
                 'Numero,URL\n';
         }
 
+        let contador = 1;
+
         const lineasCSV =
             csv
                 .trim()
                 .split(/\r?\n/);
 
-        let contador =
-            Math.max(
-                0,
-                lineasCSV.length - 1
-            ) + 1;
+        if (
+            lineasCSV.length > 1
+        ) {
+
+            let maximo = 0;
+
+            for (
+                const linea
+                of lineasCSV.slice(1)
+            ) {
+
+                const separador =
+                    linea.indexOf(',');
+
+                if (
+                    separador === -1
+                ) {
+                    continue;
+                }
+
+                const numero =
+                    Number(
+                        linea
+                            .slice(
+                                0,
+                                separador
+                            )
+                            .trim()
+                    );
+
+                if (
+                    Number.isFinite(numero) &&
+                    numero > maximo
+                ) {
+                    maximo = numero;
+                }
+            }
+
+            contador =
+                maximo + 1;
+        }
 
         // =================================================
-        // PROCESAR
+        // PROCESAR VÍDEOS
         // =================================================
 
-        let indiceCaptura = 0;
+        let publicados = 0;
 
         for (
             let i = 0;
@@ -806,55 +822,28 @@ async function capturarVirales() {
                 lista[i];
 
             console.log(
-                `\n📹 Procesando vídeo ${i + 1}/${lista.length}`
+                `\n📹 Procesando vídeo ` +
+                `${i + 1}/${lista.length}`
             );
 
             console.log(
                 `📝 Título: ${video.title}`
             );
 
-            console.log(
-                `🔗 URL: ${video.url}`
-            );
-
-            // =================================================
-            // BUSCAR UN BUFFER VÁLIDO
-            // =================================================
-
             if (
-                indiceCaptura >=
-                videosCapturados.length
+                !video.videoResponse
             ) {
 
                 console.log(
-                    '⚠️ No quedan vídeos MP4 capturados.'
+                    '⚠️ No se capturó una respuesta de vídeo válida.'
+                );
+
+                console.log(
+                    '⏭️ Se pasa al siguiente vídeo.'
                 );
 
                 continue;
             }
-
-            const captura =
-                videosCapturados[
-                    indiceCaptura
-                ];
-
-            indiceCaptura++;
-
-            if (
-                !captura ||
-                !captura.buffer
-            ) {
-
-                console.log(
-                    '❌ La captura no contiene datos.'
-                );
-
-                continue;
-            }
-
-            console.log(
-                '⬇️ Guardando vídeo capturado...'
-            );
 
             const nombreArchivo =
                 `video_${Date.now()}_${contador}.mp4`;
@@ -865,13 +854,21 @@ async function capturarVirales() {
                     nombreArchivo
                 );
 
-            const guardado =
-                guardarBufferVideo(
-                    captura.buffer,
+            // =================================================
+            // GUARDAR VÍDEO
+            // =================================================
+
+            console.log(
+                '⬇️ Guardando vídeo desde Playwright...'
+            );
+
+            const descargado =
+                await guardarRespuestaVideo(
+                    video.videoResponse,
                     archivo
                 );
 
-            if (!guardado) {
+            if (!descargado) {
 
                 console.log(
                     '❌ No se pudo guardar el vídeo.'
@@ -891,7 +888,7 @@ async function capturarVirales() {
                 );
 
             // =================================================
-            // CSV SOLO SI TELEGRAM FUNCIONÓ
+            // REGISTRAR SOLO SI TELEGRAM FUNCIONÓ
             // =================================================
 
             if (enviado) {
@@ -903,8 +900,6 @@ async function capturarVirales() {
                     video.url
                 );
 
-                contador++;
-
                 fs.writeFileSync(
                     CSV_FILE,
                     csv,
@@ -915,11 +910,11 @@ async function capturarVirales() {
                     '💾 Vídeo registrado en CSV.'
                 );
 
-            } else {
+                contador++;
+                publicados++;
 
                 console.log(
-                    '⚠️ Telegram no confirmó el envío. ' +
-                    'No se modifica el CSV.'
+                    `✅ Publicados: ${publicados}/${MAX_VIDEOS}`
                 );
             }
 
@@ -944,7 +939,7 @@ async function capturarVirales() {
         }
 
         console.log(
-            '\n✅ Ciclo terminado.'
+            `\n✅ Ciclo terminado. Publicados: ${publicados}/${MAX_VIDEOS}`
         );
 
     } catch (error) {
@@ -975,7 +970,7 @@ async function capturarVirales() {
 }
 
 // =====================================================
-// MAIN
+// EJECUCIÓN
 // =====================================================
 
 async function main() {
