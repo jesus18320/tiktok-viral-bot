@@ -110,22 +110,114 @@ const VIDEO_DIR = 'videos_temp';
 const OUTPUT_FILE = path.join(VIDEO_DIR, 'prueba.mp4');
 const TIKTOK_URL = 'https://www.tiktok.com/foryou';
 
+// =====================================================
+// TELEGRAM
+// =====================================================
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.error('');
+    console.error('❌ Faltan las variables de Telegram.');
+    console.error('');
+    console.error('Configura:');
+    console.error('TELEGRAM_BOT_TOKEN');
+    console.error('TELEGRAM_CHAT_ID');
+    console.error('');
+    process.exit(1);
+}
+
+// =====================================================
+// FUNCIÓN ENVIAR VÍDEO A TELEGRAM
+// =====================================================
+
+async function enviarTelegram(filePath) {
+    console.log('');
+    console.log('📤 Enviando vídeo a Telegram...');
+
+    const url =
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`;
+
+    const fileBuffer = fs.readFileSync(filePath);
+
+    const form = new FormData();
+
+    form.append(
+        'chat_id',
+        TELEGRAM_CHAT_ID
+    );
+
+    form.append(
+        'caption',
+        '🤖 TikTok Viral Bot - prueba final'
+    );
+
+    form.append(
+        'video',
+        new Blob(
+            [fileBuffer],
+            { type: 'video/mp4' }
+        ),
+        path.basename(filePath)
+    );
+
+    const response = await fetch(
+        url,
+        {
+            method: 'POST',
+            body: form
+        }
+    );
+
+    const resultado = await response.json();
+
+    if (!response.ok || !resultado.ok) {
+        throw new Error(
+            `Telegram rechazó el vídeo: ${JSON.stringify(resultado)}`
+        );
+    }
+
+    console.log('');
+    console.log('==========================================');
+    console.log('✅ VÍDEO ENVIADO A TELEGRAM');
+    console.log('==========================================');
+    console.log(
+        `📨 Chat ID: ${TELEGRAM_CHAT_ID}`
+    );
+}
+
+// =====================================================
+// FUNCIÓN PRINCIPAL
+// =====================================================
+
 async function main() {
+
     console.log('');
     console.log('==========================================');
-    console.log('🤖 TIKTOK VIRAL BOT - PRUEBA DE DESCARGA');
+    console.log('🤖 TIKTOK VIRAL BOT - PRUEBA FINAL');
     console.log('==========================================');
-    console.log('⚠️ Telegram: NO utilizado');
     console.log('⚠️ CSV: NO modificado');
+    console.log('📨 Telegram: SÍ utilizado');
     console.log('');
 
-    fs.mkdirSync(VIDEO_DIR, { recursive: true });
+    fs.mkdirSync(
+        VIDEO_DIR,
+        { recursive: true }
+    );
 
-    // Eliminar una prueba anterior para evitar confusiones
+    // Eliminar prueba anterior
     if (fs.existsSync(OUTPUT_FILE)) {
         fs.unlinkSync(OUTPUT_FILE);
-        console.log('🗑️ Vídeo de prueba anterior eliminado.');
+
+        console.log(
+            '🗑️ Vídeo de prueba anterior eliminado.'
+        );
     }
+
+    // =====================================================
+    // CHROMIUM
+    // =====================================================
 
     console.log('🌐 Iniciando Chromium...');
 
@@ -141,7 +233,8 @@ async function main() {
         locale: 'es-ES',
         timezoneId: 'Europe/Madrid',
         userAgent:
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+            'Mozilla/5.0 (X11; Linux x86_64) ' +
+            'AppleWebKit/537.36 ' +
             '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     });
 
@@ -153,74 +246,105 @@ async function main() {
     // CAPTURAR RESPUESTAS DE RED
     // =====================================================
 
-    page.on('response', async (response) => {
-        try {
-            const url = response.url();
-            const headers = response.headers();
+    page.on(
+        'response',
+        async response => {
 
-            const contentType =
-                (headers['content-type'] || '').toLowerCase();
+            try {
 
-            const isTikTok =
-                url.includes('tiktokcdn') ||
-                url.includes('tiktok.com') ||
-                url.includes('tiktokv.com');
+                const url =
+                    response.url();
 
-            const pareceVideo =
-                contentType.includes('video/mp4') ||
-                contentType.includes('video/') ||
-                url.includes('mime_type=video');
+                const headers =
+                    response.headers();
 
-            const noEsAudio =
-                !contentType.includes('audio/') &&
-                !url.includes('mime_type=audio');
+                const contentType =
+                    (
+                        headers['content-type'] ||
+                        ''
+                    ).toLowerCase();
 
-            if (
-                isTikTok &&
-                pareceVideo &&
-                noEsAudio
-            ) {
-                if (!videoUrls.has(url)) {
-                    videoUrls.add(url);
+                const isTikTok =
+                    url.includes('tiktokcdn') ||
+                    url.includes('tiktok.com') ||
+                    url.includes('tiktokv.com');
 
-                    console.log('');
-                    console.log('🎥 URL DE VÍDEO ENCONTRADA:');
-                    console.log(url.substring(0, 250));
-                    console.log(`📊 Total URLs válidas: ${videoUrls.size}`);
+                const pareceVideo =
+                    contentType.includes('video/mp4') ||
+                    contentType.includes('video/') ||
+                    url.includes('mime_type=video');
+
+                const noEsAudio =
+                    !contentType.includes('audio/') &&
+                    !url.includes('mime_type=audio');
+
+                if (
+                    isTikTok &&
+                    pareceVideo &&
+                    noEsAudio
+                ) {
+
+                    if (!videoUrls.has(url)) {
+
+                        videoUrls.add(url);
+
+                        console.log('');
+                        console.log(
+                            '🎥 URL DE VÍDEO ENCONTRADA:'
+                        );
+
+                        console.log(
+                            url.substring(0, 250)
+                        );
+
+                        console.log(
+                            `📊 Total URLs válidas: ${videoUrls.size}`
+                        );
+                    }
                 }
-            }
 
-        } catch (error) {
-            // No detener el diagnóstico por errores de una respuesta
+            } catch {
+                // No detener el proceso
+            }
         }
-    });
+    );
 
     // =====================================================
     // CONSOLA
     // =====================================================
 
-    page.on('console', msg => {
-        const texto = msg.text();
+    page.on(
+        'console',
+        msg => {
 
-        if (
-            msg.type() === 'error' ||
-            msg.type() === 'warning'
-        ) {
+            const texto =
+                msg.text();
+
+            if (
+                msg.type() === 'error' ||
+                msg.type() === 'warning'
+            ) {
+
+                console.log(
+                    `⚠️ CONSOLA TIKTOK: ${texto.substring(0, 500)}`
+                );
+            }
+        }
+    );
+
+    // =====================================================
+    // ERRORES
+    // =====================================================
+
+    page.on(
+        'pageerror',
+        error => {
+
             console.log(
-                `⚠️ CONSOLA TIKTOK: ${texto.substring(0, 500)}`
+                `⚠️ ERROR JAVASCRIPT: ${error.message}`
             );
         }
-    });
-
-    // =====================================================
-    // ERRORES DE PÁGINA
-    // =====================================================
-
-    page.on('pageerror', error => {
-        console.log(
-            `⚠️ ERROR JAVASCRIPT: ${error.message}`
-        );
-    });
+    );
 
     // =====================================================
     // ABRIR TIKTOK
@@ -230,15 +354,17 @@ async function main() {
     console.log('🌐 Abriendo TikTok...');
     console.log(`🔗 URL: ${TIKTOK_URL}`);
 
-    const response = await page.goto(
-        TIKTOK_URL,
-        {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
-        }
-    );
+    const response =
+        await page.goto(
+            TIKTOK_URL,
+            {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+            }
+        );
 
     if (response) {
+
         console.log(
             `📡 HTTP inicial: ${response.status()}`
         );
@@ -253,43 +379,77 @@ async function main() {
     );
 
     // =====================================================
-    // ESPERA INICIAL
+    // ESPERA
     // =====================================================
 
     console.log('');
-    console.log('⏳ Esperando vídeos de TikTok...');
+    console.log(
+        '⏳ Esperando vídeos de TikTok...'
+    );
 
     await page.waitForTimeout(10000);
 
-    console.log('✅ Primera espera terminada.');
+    console.log(
+        '✅ Primera espera terminada.'
+    );
 
     // =====================================================
-    // INFORMACIÓN DE VIDEOS
+    // MOSTRAR VIDEOS
     // =====================================================
 
     async function mostrarVideos() {
-        const datos = await page.evaluate(() => {
-            return Array.from(
-                document.querySelectorAll('video')
-            ).map(video => ({
-                src: video.currentSrc || video.src || '',
-                width: video.videoWidth,
-                height: video.videoHeight,
-                duration: video.duration
-            }));
-        });
+
+        const datos =
+            await page.evaluate(
+                () => {
+
+                    return Array.from(
+                        document.querySelectorAll('video')
+                    ).map(video => ({
+                        src:
+                            video.currentSrc ||
+                            video.src ||
+                            '',
+                        width:
+                            video.videoWidth,
+                        height:
+                            video.videoHeight,
+                        duration:
+                            video.duration
+                    }));
+                }
+            );
 
         console.log('');
-        console.log('🎥 ELEMENTOS <VIDEO>:');
-        console.log(`🎥 Total: ${datos.length}`);
+        console.log(
+            '🎥 ELEMENTOS <VIDEO>:'
+        );
 
-        datos.forEach((video, index) => {
-            console.log('');
-            console.log(`--- VIDEO ${index + 1} ---`);
-            console.log(`src: ${video.src}`);
-            console.log(`tamaño: ${video.width}x${video.height}`);
-            console.log(`duración: ${video.duration}`);
-        });
+        console.log(
+            `🎥 Total: ${datos.length}`
+        );
+
+        datos.forEach(
+            (video, index) => {
+
+                console.log('');
+                console.log(
+                    `--- VIDEO ${index + 1} ---`
+                );
+
+                console.log(
+                    `src: ${video.src}`
+                );
+
+                console.log(
+                    `tamaño: ${video.width}x${video.height}`
+                );
+
+                console.log(
+                    `duración: ${video.duration}`
+                );
+            }
+        );
     }
 
     await mostrarVideos();
@@ -299,26 +459,40 @@ async function main() {
     // =====================================================
 
     console.log('');
-    console.log('📜 Haciendo scroll para provocar carga de más vídeos...');
+    console.log(
+        '📜 Haciendo scroll...'
+    );
 
-    for (let i = 1; i <= 8; i++) {
+    for (
+        let i = 1;
+        i <= 8;
+        i++
+    ) {
 
-        console.log(`📜 Scroll ${i}/8`);
+        console.log(
+            `📜 Scroll ${i}/8`
+        );
 
-        await page.evaluate(() => {
-            window.scrollBy({
-                top: window.innerHeight * 0.9,
-                behavior: 'smooth'
-            });
-        });
+        await page.evaluate(
+            () => {
+
+                window.scrollBy({
+                    top:
+                        window.innerHeight * 0.9,
+                    behavior:
+                        'smooth'
+                });
+            }
+        );
 
         await page.waitForTimeout(3000);
 
         console.log(
-            `   🎥 URLs de vídeo capturadas: ${videoUrls.size}`
+            `   🎥 URLs capturadas: ${videoUrls.size}`
         );
 
-        const cantidadVideos = await page.locator('video').count();
+        const cantidadVideos =
+            await page.locator('video').count();
 
         console.log(
             `   🎥 Elementos <video>: ${cantidadVideos}`
@@ -330,7 +504,9 @@ async function main() {
     // =====================================================
 
     console.log('');
-    console.log('⏳ Esperando respuestas finales...');
+    console.log(
+        '⏳ Esperando respuestas finales...'
+    );
 
     await page.waitForTimeout(5000);
 
@@ -352,20 +528,16 @@ async function main() {
     if (videoUrls.size === 0) {
 
         console.error('');
-        console.error('❌ NO SE ENCONTRÓ NINGUNA URL DE VÍDEO MP4.');
-        console.error('');
-        console.error('TikTok cargó la página, pero no hemos');
-        console.error('podido capturar una respuesta de vídeo.');
-        console.error('');
+        console.error(
+            '❌ NO SE ENCONTRÓ NINGUNA URL DE VÍDEO.'
+        );
 
         await page.screenshot({
-            path: 'tiktok_descarga_diagnostico.png',
-            fullPage: true
+            path:
+                'tiktok_descarga_diagnostico.png',
+            fullPage:
+                true
         });
-
-        console.log(
-            '📸 Captura guardada: tiktok_descarga_diagnostico.png'
-        );
 
         await browser.close();
 
@@ -373,38 +545,47 @@ async function main() {
     }
 
     // =====================================================
-    // ELEGIR PRIMERA URL
+    // SELECCIONAR VIDEO
     // =====================================================
 
-    const urls = Array.from(videoUrls);
+    const urls =
+        Array.from(videoUrls);
 
-    const videoUrl = urls[0];
+    const videoUrl =
+        urls[0];
 
     console.log('');
-    console.log('✅ SELECCIONANDO PRIMER VÍDEO');
+    console.log(
+        '✅ SELECCIONANDO PRIMER VÍDEO'
+    );
+
     console.log('');
     console.log(videoUrl);
 
     // =====================================================
-    // DESCARGAR CON CONTEXTO DEL NAVEGADOR
+    // DESCARGA
     // =====================================================
 
     console.log('');
-    console.log('⬇️ Descargando vídeo...');
-
-    const downloadResponse = await context.request.get(
-        videoUrl,
-        {
-            timeout: 60000
-        }
+    console.log(
+        '⬇️ Descargando vídeo...'
     );
+
+    const downloadResponse =
+        await context.request.get(
+            videoUrl,
+            {
+                timeout: 60000
+            }
+        );
 
     console.log(
         `📡 HTTP descarga: ${downloadResponse.status()}`
     );
 
     const contentType =
-        downloadResponse.headers()['content-type'] || '';
+        downloadResponse.headers()
+            ['content-type'] || '';
 
     console.log(
         `📦 Content-Type: ${contentType}`
@@ -412,18 +593,9 @@ async function main() {
 
     if (!downloadResponse.ok()) {
 
-        console.error('');
-        console.error(
-            '❌ LA DESCARGA FALLÓ.'
+        throw new Error(
+            `La descarga falló. HTTP ${downloadResponse.status()}`
         );
-
-        console.error(
-            `HTTP: ${downloadResponse.status()}`
-        );
-
-        await browser.close();
-
-        process.exit(1);
     }
 
     const buffer =
@@ -433,23 +605,15 @@ async function main() {
         `💾 Bytes recibidos: ${buffer.length}`
     );
 
-    // =====================================================
-    // COMPROBAR TAMAÑO
-    // =====================================================
-
     if (buffer.length === 0) {
 
-        console.error(
-            '❌ El vídeo descargado está vacío.'
+        throw new Error(
+            'El vídeo descargado está vacío.'
         );
-
-        await browser.close();
-
-        process.exit(1);
     }
 
     // =====================================================
-    // GUARDAR MP4
+    // GUARDAR
     // =====================================================
 
     fs.writeFileSync(
@@ -458,7 +622,9 @@ async function main() {
     );
 
     const stats =
-        fs.statSync(OUTPUT_FILE);
+        fs.statSync(
+            OUTPUT_FILE
+        );
 
     const tamañoMB =
         (
@@ -469,7 +635,7 @@ async function main() {
 
     console.log('');
     console.log('==========================================');
-    console.log('✅ VÍDEO DESCARGADO CORRECTAMENTE');
+    console.log('✅ VÍDEO DESCARGADO');
     console.log('==========================================');
 
     console.log(
@@ -484,66 +650,87 @@ async function main() {
         `📦 Bytes: ${stats.size}`
     );
 
-    console.log(
-        `📦 Content-Type: ${contentType}`
-    );
-
     // =====================================================
-    // COMPROBAR FIRMA MP4
+    // COMPROBAR MP4
     // =====================================================
 
     const primerosBytes =
-        buffer.subarray(0, 32).toString('ascii');
+        buffer
+            .subarray(0, 32)
+            .toString('ascii');
 
     console.log('');
     console.log(
-        `🔍 Cabecera archivo: ${primerosBytes}`
+        `🔍 Cabecera: ${primerosBytes}`
     );
 
     if (
-        primerosBytes.includes('ftyp')
+        !primerosBytes.includes('ftyp')
     ) {
-        console.log(
-            '✅ La cabecera parece corresponder a un MP4.'
-        );
-    } else {
 
-        console.log(
+        console.error(
             '⚠️ La cabecera no contiene "ftyp".'
         );
 
-        console.log(
-            '⚠️ Puede que TikTok haya devuelto otro formato.'
-        );
+        await browser.close();
+
+        process.exit(1);
     }
 
+    console.log(
+        '✅ La cabecera corresponde a un MP4.'
+    );
+
     // =====================================================
-    // CERRAR
+    // CERRAR NAVEGADOR
     // =====================================================
 
     await browser.close();
 
-    console.log('');
-    console.log('==========================================');
-    console.log('🏁 PRUEBA TERMINADA');
-    console.log('==========================================');
-    console.log('');
-    console.log('👉 NO se utilizó Telegram.');
-    console.log('👉 NO se modificó el CSV.');
-    console.log('👉 El vídeo se creó dentro de videos_temp/.');
-    console.log('');
+    // =====================================================
+    // ENVIAR A TELEGRAM
+    // =====================================================
 
-    process.exit(0);
+    await enviarTelegram(
+        OUTPUT_FILE
+    );
+
+    // =====================================================
+    // FINAL
+    // =====================================================
+
+    console.log('');
+    console.log('==========================================');
+    console.log('🏁 PRUEBA FINAL TERMINADA');
+    console.log('==========================================');
+    console.log('');
+    console.log('✅ TikTok: vídeo capturado');
+    console.log('✅ Descarga: MP4 correcto');
+    console.log('✅ Telegram: vídeo enviado');
+    console.log('⚠️ CSV: NO modificado');
+    console.log('');
+    console.log(
+        '👉 Comprueba ahora tu chat de Telegram.'
+    );
+    console.log('');
 }
 
-main().catch(error => {
+// =====================================================
+// CONTROL DE ERRORES
+// =====================================================
 
-    console.error('');
-    console.error('==========================================');
-    console.error('❌ ERROR FATAL');
-    console.error('==========================================');
+main().catch(
+    error => {
 
-    console.error(error);
+        console.error('');
+        console.error('==========================================');
+        console.error('❌ ERROR FATAL');
+        console.error('==========================================');
 
-    process.exit(1);
-});
+        console.error(
+            error.message || error
+        );
+
+        process.exit(1);
+    }
+);
