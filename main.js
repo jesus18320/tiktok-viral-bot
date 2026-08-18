@@ -101,6 +101,7 @@
 //         await new Promise(r => setTimeout(r, REFRESH_INTERVAL));
 //     }
 // }
+
 import TelegramBot from 'node-telegram-bot-api';
 import fs from 'fs';
 import path from 'path';
@@ -110,7 +111,9 @@ import path from 'path';
 // =====================================================
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
 const CHANNEL_ID = '@videos_risas';
+
 const VIDEO_DIR = 'videos_temp';
 
 // =====================================================
@@ -119,7 +122,10 @@ const VIDEO_DIR = 'videos_temp';
 
 if (!TOKEN) {
     console.error('❌ No existe TELEGRAM_BOT_TOKEN.');
-    console.error('Añade TELEGRAM_BOT_TOKEN en GitHub Secrets.');
+    console.error(
+        'Añade TELEGRAM_BOT_TOKEN en GitHub Secrets.'
+    );
+
     process.exit(1);
 }
 
@@ -132,44 +138,66 @@ const bot = new TelegramBot(TOKEN, {
 });
 
 // =====================================================
-// BUSCAR VÍDEO MP4
+// BUSCAR VÍDEO
 // =====================================================
 
 function buscarVideo() {
 
-    if (!fs.existsSync(VIDEO_DIR)) {
-        fs.mkdirSync(VIDEO_DIR, {
-            recursive: true
-        });
+    console.log('');
+    console.log('🔎 Buscando vídeo de prueba...');
+    console.log(`📁 Carpeta: ${VIDEO_DIR}`);
 
-        console.error(
-            `❌ La carpeta ${VIDEO_DIR} no existía.`
+    // Crear carpeta si no existe
+    if (!fs.existsSync(VIDEO_DIR)) {
+
+        fs.mkdirSync(
+            VIDEO_DIR,
+            {
+                recursive: true
+            }
         );
 
         console.error(
-            `📁 Se ha creado automáticamente.`
+            '❌ La carpeta videos_temp no existía.'
+        );
+
+        console.error(
+            '📁 Se ha creado automáticamente.'
         );
 
         return null;
     }
 
     const archivos =
-        fs.readdirSync(VIDEO_DIR);
+        fs.readdirSync(
+            VIDEO_DIR
+        );
+
+    console.log(
+        `📂 Archivos encontrados: ${archivos.length}`
+    );
 
     const videos =
         archivos.filter(
             archivo =>
-                archivo.toLowerCase().endsWith('.mp4')
+                archivo
+                    .toLowerCase()
+                    .endsWith('.mp4')
         );
+
+    console.log(
+        `🎥 Vídeos MP4 encontrados: ${videos.length}`
+    );
 
     if (videos.length === 0) {
 
+        console.error('');
         console.error(
-            '❌ No se encontró ningún vídeo .mp4.'
+            '❌ NO SE ENCONTRÓ NINGÚN VÍDEO .MP4'
         );
 
         console.error(
-            `📁 Coloca un vídeo dentro de ${VIDEO_DIR}/`
+            '📁 Coloca un archivo .mp4 dentro de videos_temp/'
         );
 
         return null;
@@ -181,19 +209,26 @@ function buscarVideo() {
             videos[0]
         );
 
+    console.log(
+        `✅ Vídeo seleccionado: ${archivo}`
+    );
+
     return archivo;
 }
 
 // =====================================================
-// ENVIAR VÍDEO
+// ENVIAR VÍDEO A TELEGRAM
 // =====================================================
 
-async function enviarVideo(archivo) {
+async function enviarVideo(
+    archivo
+) {
 
     try {
 
+        console.log('');
         console.log(
-            '📤 Enviando vídeo a Telegram...'
+            '📤 ENVIANDO VÍDEO A TELEGRAM...'
         );
 
         console.log(
@@ -201,11 +236,35 @@ async function enviarVideo(archivo) {
         );
 
         const estadisticas =
-            fs.statSync(archivo);
+            fs.statSync(
+                archivo
+            );
+
+        const tamañoMB =
+            (
+                estadisticas.size /
+                1024 /
+                1024
+            ).toFixed(2);
 
         console.log(
-            `💾 Tamaño: ${(estadisticas.size / 1024 / 1024).toFixed(2)} MB`
+            `💾 Tamaño: ${tamañoMB} MB`
         );
+
+        if (
+            estadisticas.size === 0
+        ) {
+
+            console.error(
+                '❌ El archivo está vacío.'
+            );
+
+            return false;
+        }
+
+        // =================================================
+        // ENVÍO
+        // =================================================
 
         const mensaje =
             await bot.sendVideo(
@@ -213,22 +272,37 @@ async function enviarVideo(archivo) {
                 archivo,
                 {
                     caption:
-                        '🎬 Vídeo de prueba\n\n' +
-                        '✅ El bot puede enviar vídeos correctamente.'
+                        '🎬 VÍDEO DE PRUEBA\n\n' +
+                        '✅ Telegram puede recibir vídeos correctamente.\n' +
+                        '🤖 TikTok Viral Bot'
                 },
                 {
                     filename:
-                        path.basename(archivo),
+                        path.basename(
+                            archivo
+                        ),
 
                     contentType:
                         'video/mp4'
                 }
             );
 
+        // =================================================
+        // CONFIRMACIÓN
+        // =================================================
+
         console.log('');
-        console.log('==========================================');
-        console.log('✅ VIDEO ENVIADO CORRECTAMENTE');
-        console.log('==========================================');
+        console.log(
+            '=========================================='
+        );
+
+        console.log(
+            '✅ VIDEO ENVIADO CORRECTAMENTE'
+        );
+
+        console.log(
+            '=========================================='
+        );
 
         console.log(
             `📨 Message ID: ${mensaje.message_id}`
@@ -239,26 +313,43 @@ async function enviarVideo(archivo) {
         );
 
         console.log(
-            `📁 Archivo: ${path.basename(archivo)}`
+            `🎥 Archivo: ${path.basename(archivo)}`
         );
 
-        console.log('==========================================');
+        console.log(
+            `💾 Tamaño: ${tamañoMB} MB`
+        );
+
+        console.log(
+            '=========================================='
+        );
 
         return true;
 
     } catch (error) {
 
         console.error('');
-        console.error('==========================================');
-        console.error('❌ ERROR ENVIANDO EL VÍDEO');
-        console.error('==========================================');
+        console.error(
+            '=========================================='
+        );
+
+        console.error(
+            '❌ ERROR ENVIANDO EL VÍDEO A TELEGRAM'
+        );
+
+        console.error(
+            '=========================================='
+        );
 
         console.error(
             '❌ Mensaje:',
             error.message
         );
 
-        if (error.response) {
+        if (
+            error.response &&
+            error.response.body
+        ) {
 
             console.error(
                 '❌ Respuesta de Telegram:',
@@ -266,7 +357,9 @@ async function enviarVideo(archivo) {
             );
         }
 
-        console.error('==========================================');
+        console.error(
+            '=========================================='
+        );
 
         return false;
     }
@@ -279,7 +372,14 @@ async function enviarVideo(archivo) {
 async function main() {
 
     console.log('');
-    console.log('🤖 TIKTOK VIRAL BOT - PRUEBA DE VÍDEO');
+    console.log(
+        '🤖 TIKTOK VIRAL BOT'
+    );
+
+    console.log(
+        '🧪 PRUEBA EXCLUSIVA DE ENVÍO DE VÍDEO'
+    );
+
     console.log('');
 
     console.log(
@@ -287,11 +387,14 @@ async function main() {
     );
 
     console.log(
-        `📁 Carpeta: ${VIDEO_DIR}`
+        `📁 Carpeta de vídeos: ${VIDEO_DIR}`
     );
 
     console.log('');
-    console.log('🔎 Buscando vídeo...');
+
+    // =================================================
+    // BUSCAR VÍDEO
+    // =================================================
 
     const archivo =
         buscarVideo();
@@ -300,23 +403,26 @@ async function main() {
 
         console.error('');
         console.error(
-            '❌ No se puede realizar la prueba.'
+            '❌ PRUEBA CANCELADA.'
         );
 
         process.exit(1);
     }
 
-    console.log(
-        `✅ Vídeo encontrado: ${archivo}`
-    );
-
-    console.log('');
-    console.log('🚀 Iniciando envío...');
+    // =================================================
+    // ENVIAR VÍDEO
+    // =================================================
 
     const enviado =
-        await enviarVideo(archivo);
+        await enviarVideo(
+            archivo
+        );
 
     console.log('');
+
+    // =================================================
+    // RESULTADO
+    // =================================================
 
     if (enviado) {
 
@@ -325,7 +431,11 @@ async function main() {
         );
 
         console.log(
-            '📺 Comprueba ahora el canal de Telegram.'
+            '📺 Comprueba ahora el canal @videos_risas.'
+        );
+
+        console.log(
+            '✅ Si el vídeo aparece, Telegram funciona.'
         );
 
         process.exit(0);
@@ -333,7 +443,7 @@ async function main() {
     } else {
 
         console.error(
-            '❌ PRUEBA FALLIDA.'
+            '❌ LA PRUEBA DE VÍDEO HA FALLADO.'
         );
 
         process.exit(1);
@@ -344,11 +454,18 @@ async function main() {
 // EJECUTAR
 // =====================================================
 
-main().catch(error => {
+main().catch(
+    error => {
 
-    console.error('');
-    console.error('❌ ERROR FATAL:');
-    console.error(error);
+        console.error('');
+        console.error(
+            '❌ ERROR FATAL:'
+        );
 
-    process.exit(1);
-});
+        console.error(
+            error
+        );
+
+        process.exit(1);
+    }
+);
