@@ -114,15 +114,16 @@ import TelegramBot from 'node-telegram-bot-api';
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHANNEL_ID = '@videos_risas';
 
-const REFRESH_INTERVAL = 40000;
 const MAX_VIDEOS = 2;
 
 const CSV_FILE = 'videos_virales.csv';
 const DOWNLOAD_DIR = 'videos_temp';
 
 if (!TOKEN) {
-    console.error('❌ Falta TELEGRAM_BOT_TOKEN');
-    console.error('Configúralo en PowerShell antes de arrancar.');
+    console.error(
+        '❌ Falta la variable TELEGRAM_BOT_TOKEN.'
+    );
+
     process.exit(1);
 }
 
@@ -132,7 +133,9 @@ const bot = new TelegramBot(TOKEN, {
 
 // Crear carpeta temporal
 if (!fs.existsSync(DOWNLOAD_DIR)) {
-    fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+    fs.mkdirSync(DOWNLOAD_DIR, {
+        recursive: true
+    });
 }
 
 // =====================================================
@@ -154,13 +157,15 @@ if (fs.existsSync(CSV_FILE)) {
 
     for (const linea of lineas) {
 
-        const separador = linea.indexOf(',');
+        const separador =
+            linea.indexOf(',');
 
         if (separador !== -1) {
 
-            const url = linea
-                .slice(separador + 1)
-                .trim();
+            const url =
+                linea
+                    .slice(separador + 1)
+                    .trim();
 
             if (url) {
                 videosGuardados.add(url);
@@ -175,36 +180,55 @@ if (fs.existsSync(CSV_FILE)) {
 
 function limpiarTitulo(titulo) {
 
-    if (!titulo || typeof titulo !== 'string') {
+    if (
+        !titulo ||
+        typeof titulo !== 'string'
+    ) {
         return 'Vídeo viral';
     }
 
-    let resultado = titulo.trim();
+    let resultado =
+        titulo.trim();
 
-    // Eliminar espacios repetidos
-    resultado = resultado.replace(/\s+/g, ' ');
+    // Quitar espacios repetidos
+    resultado =
+        resultado.replace(
+            /\s+/g,
+            ' '
+        );
 
     // Quitar hashtags del final
-    resultado = resultado.replace(
-        /(\s*#[\wáéíóúñÁÉÍÓÚÑ]+)+\s*$/g,
-        ''
-    ).trim();
+    resultado =
+        resultado.replace(
+            /(\s*#[\wáéíóúñÁÉÍÓÚÑ]+)+\s*$/g,
+            ''
+        ).trim();
 
-    // Limitar a 900 caracteres para dejar espacio
-    // suficiente para Telegram
+    // Telegram permite captions largos,
+    // pero dejamos un margen de seguridad.
     if (resultado.length > 900) {
+
         resultado =
-            resultado.substring(0, 897).trim() + '...';
+            resultado
+                .substring(0, 897)
+                .trim() +
+            '...';
     }
 
-    return resultado || 'Vídeo viral';
+    return (
+        resultado ||
+        'Vídeo viral'
+    );
 }
 
 // =====================================================
 // ENVIAR VÍDEO A TELEGRAM
 // =====================================================
 
-async function enviarTelegram(titulo, archivo) {
+async function enviarTelegram(
+    titulo,
+    archivo
+) {
 
     try {
 
@@ -222,7 +246,8 @@ async function enviarTelegram(titulo, archivo) {
                 caption:
                     `🎬 ${tituloLimpio}`,
 
-                supports_streaming: true
+                supports_streaming:
+                    true
             }
         );
 
@@ -269,8 +294,12 @@ async function guardarRespuestaVideo(
                 headers['content-length'] || 0
             );
 
-        // Solo aceptar respuestas de vídeo
-        if (!contentType.includes('video/')) {
+        // Solo aceptar vídeos
+        if (
+            !contentType.includes(
+                'video/'
+            )
+        ) {
             return false;
         }
 
@@ -281,7 +310,10 @@ async function guardarRespuestaVideo(
         const buffer =
             await response.body();
 
-        if (!buffer || buffer.length < 10000) {
+        if (
+            !buffer ||
+            buffer.length < 10000
+        ) {
 
             console.log(
                 '⚠️ Respuesta demasiado pequeña.'
@@ -344,24 +376,26 @@ async function capturarVirales() {
 
     try {
 
-        browser = await chromium.launch({
-            headless: true
-        });
+        browser =
+            await chromium.launch({
+                headless: true
+            });
 
-        context = await browser.newContext({
+        context =
+            await browser.newContext({
 
-            userAgent:
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                'AppleWebKit/537.36 ' +
-                '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                userAgent:
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+                    'AppleWebKit/537.36 ' +
+                    '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
 
-            viewport: {
-                width: 1280,
-                height: 900
-            },
+                viewport: {
+                    width: 1280,
+                    height: 900
+                },
 
-            locale: 'es-ES'
-        });
+                locale: 'es-ES'
+            });
 
         const page =
             await context.newPage();
@@ -370,10 +404,11 @@ async function capturarVirales() {
         // VÍDEOS DETECTADOS
         // =================================================
 
-        const videos = new Map();
+        const videos =
+            new Map();
 
         // =================================================
-        // RESPUESTAS DE LA API DE TIKTOK
+        // RESPUESTAS API DE TIKTOK
         // =================================================
 
         page.on(
@@ -419,10 +454,11 @@ async function capturarVirales() {
                                 `${item.author.uniqueId}` +
                                 `/video/${item.id}`;
 
-                            // Obtener el título/descripción
+                            // Obtener descripción/título
                             const titulo =
                                 item.desc ||
                                 item.description ||
+                                item.title ||
                                 'Vídeo viral';
 
                             if (
@@ -434,7 +470,8 @@ async function capturarVirales() {
                                 videos.set(
                                     videoUrl,
                                     {
-                                        url: videoUrl,
+                                        url:
+                                            videoUrl,
 
                                         title:
                                             limpiarTitulo(
@@ -450,7 +487,7 @@ async function capturarVirales() {
                     }
 
                 } catch {
-                    // Ignorar respuestas que no sean JSON
+                    // Ignorar respuestas no JSON
                 }
             }
         );
@@ -511,7 +548,7 @@ async function capturarVirales() {
                     }
 
                 } catch {
-                    // Ignorar errores
+                    // Ignorar errores individuales
                 }
             }
         );
@@ -530,7 +567,8 @@ async function capturarVirales() {
                 waitUntil:
                     'domcontentloaded',
 
-                timeout: 60000
+                timeout:
+                    60000
             }
         );
 
@@ -558,7 +596,7 @@ async function capturarVirales() {
             );
         }
 
-        // Dar tiempo a las peticiones
+        // Esperar peticiones pendientes
         await page.waitForTimeout(
             5000
         );
@@ -569,13 +607,15 @@ async function capturarVirales() {
 
         const lista =
             Array
-                .from(videos.values())
-                .filter(video => {
-
-                    return !videosGuardados.has(
-                        video.url
-                    );
-                })
+                .from(
+                    videos.values()
+                )
+                .filter(
+                    video =>
+                        !videosGuardados.has(
+                            video.url
+                        )
+                )
                 .slice(
                     0,
                     MAX_VIDEOS
@@ -612,7 +652,8 @@ async function capturarVirales() {
         let contador =
             Math.max(
                 0,
-                csv.trim()
+                csv
+                    .trim()
                     .split('\n')
                     .length - 1
             ) + 1;
@@ -715,7 +756,7 @@ async function capturarVirales() {
             }
 
             // =================================================
-            // BORRAR ARCHIVO TEMPORAL
+            // BORRAR TEMPORAL
             // =================================================
 
             if (
@@ -745,6 +786,10 @@ async function capturarVirales() {
             error.message
         );
 
+        // Importante para GitHub Actions:
+        // el error se muestra claramente en los logs.
+        throw error;
+
     } finally {
 
         if (context) {
@@ -764,13 +809,13 @@ async function capturarVirales() {
 }
 
 // =====================================================
-// LOOP
+// EJECUCIÓN ÚNICA
 // =====================================================
 
-async function loop() {
+async function main() {
 
     console.log(
-        '🤖 Bot iniciado correctamente'
+        '🤖 Bot iniciado'
     );
 
     console.log(
@@ -778,38 +823,27 @@ async function loop() {
     );
 
     console.log(
-        `⏱️ Cada ${REFRESH_INTERVAL / 1000} segundos`
+        `🎬 Máximo de vídeos: ${MAX_VIDEOS}`
     );
 
-    while (true) {
+    await capturarVirales();
 
-        await capturarVirales();
-
-        console.log(
-            `\n⏳ Esperando ` +
-            `${REFRESH_INTERVAL / 1000} segundos...`
-        );
-
-        await new Promise(
-            resolve => {
-
-                setTimeout(
-                    resolve,
-                    REFRESH_INTERVAL
-                );
-            }
-        );
-    }
+    console.log(
+        '\n✅ Ejecución terminada.'
+    );
 }
 
 // =====================================================
 // ARRANCAR
 // =====================================================
 
-loop().catch(error => {
+main().catch(error => {
 
     console.error(
-        '❌ Error fatal:',
+        '\n❌ ERROR FATAL:'
+    );
+
+    console.error(
         error
     );
 
