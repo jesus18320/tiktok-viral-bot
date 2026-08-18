@@ -102,1250 +102,448 @@
 //     }
 // }
 
-
 import { chromium } from 'playwright';
 import fs from 'fs';
+import path from 'path';
 
-// =====================================================
-// CONFIGURACIÓN
-// =====================================================
-
+const VIDEO_DIR = 'videos_temp';
+const OUTPUT_FILE = path.join(VIDEO_DIR, 'prueba.mp4');
 const TIKTOK_URL = 'https://www.tiktok.com/foryou';
 
-const HTML_FILE = 'tiktok_diagnostico.html';
-const PNG_FILE = 'tiktok_diagnostico.png';
-const JSON_FILE = 'tiktok_datos_diagnostico.json';
+async function main() {
+    console.log('');
+    console.log('==========================================');
+    console.log('🤖 TIKTOK VIRAL BOT - PRUEBA DE DESCARGA');
+    console.log('==========================================');
+    console.log('⚠️ Telegram: NO utilizado');
+    console.log('⚠️ CSV: NO modificado');
+    console.log('');
 
-// =====================================================
-// ARRANQUE
-// =====================================================
+    fs.mkdirSync(VIDEO_DIR, { recursive: true });
 
-console.log('');
-console.log('==========================================');
-console.log('🤖 TIKTOK VIRAL BOT - DIAGNÓSTICO AVANZADO');
-console.log('==========================================');
-console.log('');
-console.log('⚠️ ESTA PRUEBA NO USA TELEGRAM');
-console.log('⚠️ ESTA PRUEBA NO MODIFICA EL CSV');
-console.log('⚠️ ESTA PRUEBA NO DESCARGA VÍDEOS');
-console.log('');
-
-// =====================================================
-// UTILIDADES
-// =====================================================
-
-function esObjeto(valor) {
-    return valor !== null && typeof valor === 'object';
-}
-
-function buscarClavesRecursivamente(
-    objeto,
-    clavesBuscadas,
-    resultados = [],
-    ruta = ''
-) {
-    if (!esObjeto(objeto)) {
-        return resultados;
+    // Eliminar una prueba anterior para evitar confusiones
+    if (fs.existsSync(OUTPUT_FILE)) {
+        fs.unlinkSync(OUTPUT_FILE);
+        console.log('🗑️ Vídeo de prueba anterior eliminado.');
     }
 
-    if (resultados.length > 500) {
-        return resultados;
-    }
+    console.log('🌐 Iniciando Chromium...');
 
-    if (Array.isArray(objeto)) {
+    const browser = await chromium.launch({
+        headless: true
+    });
 
-        for (let i = 0; i < objeto.length; i++) {
+    const context = await browser.newContext({
+        viewport: {
+            width: 1280,
+            height: 900
+        },
+        locale: 'es-ES',
+        timezoneId: 'Europe/Madrid',
+        userAgent:
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+            '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    });
 
-            buscarClavesRecursivamente(
-                objeto[i],
-                clavesBuscadas,
-                resultados,
-                `${ruta}[${i}]`
-            );
-        }
+    const page = await context.newPage();
 
-        return resultados;
-    }
+    const videoUrls = new Set();
 
-    for (const [clave, valor] of Object.entries(objeto)) {
+    // =====================================================
+    // CAPTURAR RESPUESTAS DE RED
+    // =====================================================
 
-        const rutaActual =
-            ruta
-                ? `${ruta}.${clave}`
-                : clave;
+    page.on('response', async (response) => {
+        try {
+            const url = response.url();
+            const headers = response.headers();
 
-        if (
-            clavesBuscadas.has(
-                clave.toLowerCase()
-            )
-        ) {
+            const contentType =
+                (headers['content-type'] || '').toLowerCase();
 
-            resultados.push({
-                clave,
-                valor,
-                ruta: rutaActual
-            });
-        }
+            const isTikTok =
+                url.includes('tiktokcdn') ||
+                url.includes('tiktok.com') ||
+                url.includes('tiktokv.com');
 
-        if (esObjeto(valor)) {
+            const pareceVideo =
+                contentType.includes('video/mp4') ||
+                contentType.includes('video/') ||
+                url.includes('mime_type=video');
 
-            buscarClavesRecursivamente(
-                valor,
-                clavesBuscadas,
-                resultados,
-                rutaActual
-            );
-        }
-    }
-
-    return resultados;
-}
-
-// =====================================================
-// EXTRAER IDs
-// =====================================================
-
-function extraerIds(objeto) {
-
-    const claves = new Set([
-        'aweme_id',
-        'awemeid',
-        'item_id',
-        'itemid',
-        'video_id',
-        'videoid'
-    ]);
-
-    const encontrados =
-        buscarClavesRecursivamente(
-            objeto,
-            claves
-        );
-
-    const ids = new Set();
-
-    for (const encontrado of encontrados) {
-
-        const valor =
-            encontrado.valor;
-
-        if (
-            typeof valor === 'string' &&
-            /^\d{10,}$/.test(valor)
-        ) {
-
-            ids.add(valor);
-        }
-
-        if (
-            typeof valor === 'number' &&
-            Number.isSafeInteger(valor)
-        ) {
-
-            ids.add(
-                String(valor)
-            );
-        }
-    }
-
-    return Array.from(ids);
-}
-
-// =====================================================
-// EXTRAER URLS DE VÍDEO
-// =====================================================
-
-function extraerUrlsVideo(objeto) {
-
-    const claves = new Set([
-        'play_addr',
-        'download_addr',
-        'playurl',
-        'play_url',
-        'download_url',
-        'url_list'
-    ]);
-
-    const encontrados =
-        buscarClavesRecursivamente(
-            objeto,
-            claves
-        );
-
-    const urls = new Set();
-
-    function procesarValor(valor) {
-
-        if (typeof valor === 'string') {
+            const noEsAudio =
+                !contentType.includes('audio/') &&
+                !url.includes('mime_type=audio');
 
             if (
-                valor.startsWith('http') &&
-                (
-                    valor.includes('.mp4') ||
-                    valor.includes('/video/') ||
-                    valor.includes('video/tos/')
-                )
+                isTikTok &&
+                pareceVideo &&
+                noEsAudio
             ) {
+                if (!videoUrls.has(url)) {
+                    videoUrls.add(url);
 
-                urls.add(valor);
+                    console.log('');
+                    console.log('🎥 URL DE VÍDEO ENCONTRADA:');
+                    console.log(url.substring(0, 250));
+                    console.log(`📊 Total URLs válidas: ${videoUrls.size}`);
+                }
             }
 
-            return;
+        } catch (error) {
+            // No detener el diagnóstico por errores de una respuesta
         }
+    });
 
-        if (Array.isArray(valor)) {
+    // =====================================================
+    // CONSOLA
+    // =====================================================
 
-            for (const elemento of valor) {
-                procesarValor(elemento);
-            }
-
-            return;
-        }
-
-        if (esObjeto(valor)) {
-
-            for (const elemento of Object.values(valor)) {
-                procesarValor(elemento);
-            }
-        }
-    }
-
-    for (const encontrado of encontrados) {
-
-        procesarValor(
-            encontrado.valor
-        );
-    }
-
-    return Array.from(urls);
-}
-
-// =====================================================
-// EXTRAER TÍTULOS / DESCRIPCIONES
-// =====================================================
-
-function extraerTextos(objeto) {
-
-    const claves = new Set([
-        'desc',
-        'description',
-        'title',
-        'text'
-    ]);
-
-    const encontrados =
-        buscarClavesRecursivamente(
-            objeto,
-            claves
-        );
-
-    const textos = new Set();
-
-    for (const encontrado of encontrados) {
+    page.on('console', msg => {
+        const texto = msg.text();
 
         if (
-            typeof encontrado.valor !== 'string'
+            msg.type() === 'error' ||
+            msg.type() === 'warning'
         ) {
-            continue;
+            console.log(
+                `⚠️ CONSOLA TIKTOK: ${texto.substring(0, 500)}`
+            );
         }
+    });
 
-        const texto =
-            encontrado.valor.trim();
+    // =====================================================
+    // ERRORES DE PÁGINA
+    // =====================================================
 
-        if (
-            texto.length === 0 ||
-            texto.length > 1000
-        ) {
-            continue;
+    page.on('pageerror', error => {
+        console.log(
+            `⚠️ ERROR JAVASCRIPT: ${error.message}`
+        );
+    });
+
+    // =====================================================
+    // ABRIR TIKTOK
+    // =====================================================
+
+    console.log('');
+    console.log('🌐 Abriendo TikTok...');
+    console.log(`🔗 URL: ${TIKTOK_URL}`);
+
+    const response = await page.goto(
+        TIKTOK_URL,
+        {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
         }
+    );
 
-        textos.add(texto);
+    if (response) {
+        console.log(
+            `📡 HTTP inicial: ${response.status()}`
+        );
     }
 
-    return Array.from(textos);
-}
+    console.log(
+        `📍 URL actual: ${page.url()}`
+    );
 
-// =====================================================
-// NORMALIZAR DATOS
-// =====================================================
+    console.log(
+        `📄 Título: ${await page.title()}`
+    );
 
-function registrarDatos(
-    datos,
-    idsGlobales,
-    urlsGlobales,
-    textosGlobales,
-    respuesta
-) {
+    // =====================================================
+    // ESPERA INICIAL
+    // =====================================================
 
-    const ids =
-        extraerIds(datos);
+    console.log('');
+    console.log('⏳ Esperando vídeos de TikTok...');
 
-    const urls =
-        extraerUrlsVideo(datos);
+    await page.waitForTimeout(10000);
 
-    const textos =
-        extraerTextos(datos);
+    console.log('✅ Primera espera terminada.');
 
-    for (const id of ids) {
-        idsGlobales.add(id);
-    }
+    // =====================================================
+    // INFORMACIÓN DE VIDEOS
+    // =====================================================
 
-    for (const url of urls) {
-        urlsGlobales.add(url);
-    }
-
-    for (const texto of textos) {
-        textosGlobales.add(texto);
-    }
-
-    if (ids.length > 0) {
+    async function mostrarVideos() {
+        const datos = await page.evaluate(() => {
+            return Array.from(
+                document.querySelectorAll('video')
+            ).map(video => ({
+                src: video.currentSrc || video.src || '',
+                width: video.videoWidth,
+                height: video.videoHeight,
+                duration: video.duration
+            }));
+        });
 
         console.log('');
-        console.log(
-            '🎯 IDs encontrados en respuesta:'
-        );
+        console.log('🎥 ELEMENTOS <VIDEO>:');
+        console.log(`🎥 Total: ${datos.length}`);
 
-        for (const id of ids) {
-
-            console.log(
-                `   🆔 ${id}`
-            );
-        }
+        datos.forEach((video, index) => {
+            console.log('');
+            console.log(`--- VIDEO ${index + 1} ---`);
+            console.log(`src: ${video.src}`);
+            console.log(`tamaño: ${video.width}x${video.height}`);
+            console.log(`duración: ${video.duration}`);
+        });
     }
 
-    if (urls.length > 0) {
+    await mostrarVideos();
 
-        console.log('');
-        console.log(
-            '🎥 URLs de vídeo encontradas:'
-        );
+    // =====================================================
+    // SCROLL
+    // =====================================================
 
-        for (const url of urls.slice(0, 10)) {
+    console.log('');
+    console.log('📜 Haciendo scroll para provocar carga de más vídeos...');
 
-            console.log(
-                `   🎬 ${url.substring(0, 220)}`
-            );
-        }
+    for (let i = 1; i <= 8; i++) {
 
-        if (urls.length > 10) {
+        console.log(`📜 Scroll ${i}/8`);
 
-            console.log(
-                `   ... y ${urls.length - 10} más`
-            );
-        }
-    }
-}
-
-// =====================================================
-// MAIN
-// =====================================================
-
-async function main() {
-
-    let browser = null;
-
-    const idsGlobales =
-        new Set();
-
-    const urlsGlobales =
-        new Set();
-
-    const textosGlobales =
-        new Set();
-
-    const respuestasJSON = [];
-
-    try {
-
-        // =================================================
-        // CHROMIUM
-        // =================================================
-
-        console.log(
-            '🌐 Iniciando Chromium...'
-        );
-
-        browser =
-            await chromium.launch({
-                headless: true
+        await page.evaluate(() => {
+            window.scrollBy({
+                top: window.innerHeight * 0.9,
+                behavior: 'smooth'
             });
+        });
+
+        await page.waitForTimeout(3000);
 
         console.log(
-            '✅ Chromium iniciado.'
+            `   🎥 URLs de vídeo capturadas: ${videoUrls.size}`
         );
 
-        // =================================================
-        // CONTEXTO
-        // =================================================
-
-        const context =
-            await browser.newContext({
-
-                userAgent:
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                    'AppleWebKit/537.36 ' +
-                    '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-
-                viewport: {
-                    width: 1280,
-                    height: 900
-                },
-
-                locale: 'es-ES',
-
-                extraHTTPHeaders: {
-                    'Accept-Language':
-                        'es-ES,es;q=0.9,en;q=0.8'
-                }
-            });
-
-        const page =
-            await context.newPage();
-
-        // =================================================
-        // ERRORES JAVASCRIPT
-        // =================================================
-
-        page.on(
-            'console',
-            mensaje => {
-
-                const tipo =
-                    mensaje.type();
-
-                if (
-                    tipo === 'error'
-                ) {
-
-                    console.log(
-                        `⚠️ CONSOLA TIKTOK: ${mensaje.text()}`
-                    );
-                }
-            }
-        );
-
-        page.on(
-            'pageerror',
-            error => {
-
-                console.log(
-                    `⚠️ ERROR JAVASCRIPT: ${error.message}`
-                );
-            }
-        );
-
-        // =================================================
-        // RESPUESTAS HTTP
-        // =================================================
-
-        page.on(
-            'response',
-            async response => {
-
-                try {
-
-                    const url =
-                        response.url();
-
-                    if (
-                        !url.includes('tiktok.com')
-                    ) {
-                        return;
-                    }
-
-                    const contentType =
-                        response.headers()[
-                            'content-type'
-                        ] || '';
-
-                    // Solo nos interesan JSON
-                    if (
-                        !contentType.includes('json')
-                    ) {
-                        return;
-                    }
-
-                    const texto =
-                        await response.text();
-
-                    if (
-                        !texto ||
-                        texto.length < 2
-                    ) {
-                        return;
-                    }
-
-                    let datos;
-
-                    try {
-
-                        datos =
-                            JSON.parse(texto);
-
-                    } catch {
-
-                        return;
-                    }
-
-                    const idsAntes =
-                        idsGlobales.size;
-
-                    const urlsAntes =
-                        urlsGlobales.size;
-
-                    registrarDatos(
-                        datos,
-                        idsGlobales,
-                        urlsGlobales,
-                        textosGlobales,
-                        response
-                    );
-
-                    if (
-                        idsGlobales.size > idsAntes ||
-                        urlsGlobales.size > urlsAntes
-                    ) {
-
-                        respuestasJSON.push({
-                            url,
-                            status:
-                                response.status(),
-                            contentType,
-                            data:
-                                datos
-                        });
-                    }
-
-                } catch {
-                    // Ignorar respuestas individuales
-                }
-            }
-        );
-
-        // =================================================
-        // ABRIR TIKTOK
-        // =================================================
-
-        console.log('');
-        console.log(
-            '🌐 Abriendo TikTok...'
-        );
+        const cantidadVideos = await page.locator('video').count();
 
         console.log(
-            `🔗 URL: ${TIKTOK_URL}`
+            `   🎥 Elementos <video>: ${cantidadVideos}`
         );
+    }
 
-        const respuesta =
-            await page.goto(
-                TIKTOK_URL,
-                {
-                    waitUntil:
-                        'domcontentloaded',
+    // =====================================================
+    // ESPERA FINAL
+    // =====================================================
 
-                    timeout:
-                        60000
-                }
-            );
+    console.log('');
+    console.log('⏳ Esperando respuestas finales...');
 
-        if (respuesta) {
+    await page.waitForTimeout(5000);
 
-            console.log(
-                `🌐 RESPUESTA ${respuesta.status()}: ${respuesta.url()}`
-            );
+    await mostrarVideos();
 
-            console.log(
-                `📡 HTTP inicial: ${respuesta.status()}`
-            );
-        }
+    // =====================================================
+    // RESULTADO
+    // =====================================================
 
-        console.log(
-            `📍 URL actual: ${page.url()}`
-        );
+    console.log('');
+    console.log('==========================================');
+    console.log('📊 RESULTADO DE CAPTURA');
+    console.log('==========================================');
 
-        console.log(
-            `📄 Título de página: ${await page.title()}`
-        );
+    console.log(
+        `🎥 URLs de vídeo válidas: ${videoUrls.size}`
+    );
 
-        // =================================================
-        // ESPERA
-        // =================================================
+    if (videoUrls.size === 0) {
 
-        console.log('');
-        console.log(
-            '⏳ Esperando carga de TikTok...'
-        );
-
-        await page.waitForTimeout(
-            10000
-        );
-
-        console.log(
-            '✅ Primera espera terminada.'
-        );
-
-        // =================================================
-        // INFORMACIÓN INICIAL
-        // =================================================
-
-        console.log('');
-        console.log(
-            '=========================================='
-        );
-        console.log(
-            '🔎 INFORMACIÓN INICIAL'
-        );
-        console.log(
-            '=========================================='
-        );
-
-        console.log(
-            `📍 URL: ${page.url()}`
-        );
-
-        console.log(
-            `📄 Título: ${await page.title()}`
-        );
-
-        // =================================================
-        // INSPECCIONAR HTML
-        // =================================================
-
-        const informacionInicial =
-            await page.evaluate(
-                () => {
-
-                    const videos =
-                        Array.from(
-                            document.querySelectorAll(
-                                'video'
-                            )
-                        );
-
-                    return {
-
-                        enlaces:
-                            Array.from(
-                                document.querySelectorAll(
-                                    'a'
-                                )
-                            ).map(
-                                a => ({
-                                    href:
-                                        a.href || '',
-                                    texto:
-                                        (
-                                            a.innerText ||
-                                            ''
-                                        ).trim()
-                                })
-                            ),
-
-                        videos:
-                            videos.map(
-                                video => ({
-                                    src:
-                                        video.currentSrc ||
-                                        video.src ||
-                                        '',
-                                    poster:
-                                        video.poster ||
-                                        '',
-                                    width:
-                                        video.videoWidth,
-                                    height:
-                                        video.videoHeight
-                                })
-                            ),
-
-                        imagenes:
-                            document.querySelectorAll(
-                                'img'
-                            ).length,
-
-                        texto:
-                            document.body?.innerText ||
-                            ''
-                    };
-                }
-            );
-
-        console.log(
-            `📝 Texto visible: ${informacionInicial.texto.length} caracteres`
-        );
-
-        console.log(
-            `🔗 Enlaces: ${informacionInicial.enlaces.length}`
-        );
-
-        console.log(
-            `🎥 Elementos <video>: ${informacionInicial.videos.length}`
-        );
-
-        console.log(
-            `🖼️ Imágenes: ${informacionInicial.imagenes}`
-        );
-
-        // =================================================
-        // MOSTRAR VIDEOS
-        // =================================================
-
-        console.log('');
-        console.log(
-            '🎥 ELEMENTOS VIDEO'
-        );
-
-        for (
-            const video
-            of informacionInicial.videos
-        ) {
-
-            console.log(
-                `🎥 src: ${video.src || '(vacío)'}`
-            );
-
-            console.log(
-                `📐 tamaño: ${video.width}x${video.height}`
-            );
-        }
-
-        // =================================================
-        // SCROLL
-        // =================================================
-
-        console.log('');
-        console.log(
-            '=========================================='
-        );
-        console.log(
-            '📜 HACIENDO SCROLL'
-        );
-        console.log(
-            '=========================================='
-        );
-
-        for (
-            let i = 0;
-            i < 10;
-            i++
-        ) {
-
-            console.log(
-                `📜 Scroll ${i + 1}/10`
-            );
-
-            await page.mouse.wheel(
-                0,
-                4500
-            );
-
-            await page.waitForTimeout(
-                2500
-            );
-
-            console.log(
-                `   🆔 IDs acumulados: ${idsGlobales.size}`
-            );
-
-            console.log(
-                `   🎥 URLs vídeo acumuladas: ${urlsGlobales.size}`
-            );
-        }
-
-        // =================================================
-        // ESPERA FINAL
-        // =================================================
-
-        console.log('');
-        console.log(
-            '⏳ Esperando 5 segundos adicionales...'
-        );
-
-        await page.waitForTimeout(
-            5000
-        );
-
-        // =================================================
-        // INSPECCIÓN FINAL DEL DOM
-        // =================================================
-
-        const informacionFinal =
-            await page.evaluate(
-                () => {
-
-                    const enlaces =
-                        Array.from(
-                            document.querySelectorAll(
-                                'a'
-                            )
-                        );
-
-                    const videos =
-                        Array.from(
-                            document.querySelectorAll(
-                                'video'
-                            )
-                        );
-
-                    const imagenes =
-                        Array.from(
-                            document.querySelectorAll(
-                                'img'
-                            )
-                        );
-
-                    return {
-
-                        enlaces:
-                            enlaces.map(
-                                a => ({
-                                    href:
-                                        a.href || '',
-                                    texto:
-                                        (
-                                            a.innerText ||
-                                            ''
-                                        ).trim()
-                                })
-                            ),
-
-                        videos:
-                            videos.map(
-                                video => ({
-                                    src:
-                                        video.currentSrc ||
-                                        video.src ||
-                                        '',
-                                    poster:
-                                        video.poster ||
-                                        '',
-                                    width:
-                                        video.videoWidth,
-                                    height:
-                                        video.videoHeight
-                                })
-                            ),
-
-                        imagenes:
-                            imagenes.map(
-                                img => ({
-                                    src:
-                                        img.src || '',
-                                    alt:
-                                        img.alt || ''
-                                })
-                            ),
-
-                        texto:
-                            document.body?.innerText ||
-                            ''
-                    };
-                }
-            );
-
-        // =================================================
-        // BUSCAR ENLACES /VIDEO/
-        // =================================================
-
-        const enlacesVideo =
-            informacionFinal.enlaces.filter(
-                enlace =>
-                    enlace.href.includes(
-                        '/video/'
-                    )
-            );
-
-        // =================================================
-        // RESULTADO FINAL
-        // =================================================
-
-        console.log('');
-        console.log(
-            '=========================================='
-        );
-
-        console.log(
-            '📊 RESULTADO FINAL'
-        );
-
-        console.log(
-            '=========================================='
-        );
-
-        console.log(
-            `🆔 IDs de vídeo encontrados: ${idsGlobales.size}`
-        );
-
-        console.log(
-            `🎥 URLs de vídeo encontradas: ${urlsGlobales.size}`
-        );
-
-        console.log(
-            `🔗 Enlaces /video/: ${enlacesVideo.length}`
-        );
-
-        console.log(
-            `🎥 Elementos <video>: ${informacionFinal.videos.length}`
-        );
-
-        console.log(
-            `🖼️ Imágenes: ${informacionFinal.imagenes.length}`
-        );
-
-        console.log(
-            `📡 Respuestas JSON útiles: ${respuestasJSON.length}`
-        );
-
-        // =================================================
-        // MOSTRAR IDs
-        // =================================================
-
-        if (
-            idsGlobales.size > 0
-        ) {
-
-            console.log('');
-            console.log(
-                '🎯🎯🎯 IDs DE TIKTOK ENCONTRADOS'
-            );
-
-            console.log(
-                '=========================================='
-            );
-
-            for (
-                const id
-                of idsGlobales
-            ) {
-
-                console.log(
-                    `🆔 VIDEO ID: ${id}`
-                );
-
-                console.log(
-                    `🔗 POSIBLE URL: https://www.tiktok.com/video/${id}`
-                );
-
-                console.log(
-                    '------------------------------------------'
-                );
-            }
-
-        } else {
-
-            console.log('');
-            console.log(
-                '❌ NO SE ENCONTRARON IDs DE VÍDEO'
-            );
-        }
-
-        // =================================================
-        // MOSTRAR URLS
-        // =================================================
-
-        if (
-            urlsGlobales.size > 0
-        ) {
-
-            console.log('');
-            console.log(
-                '🎥🎥🎥 FUENTES DE VÍDEO ENCONTRADAS'
-            );
-
-            console.log(
-                '=========================================='
-            );
-
-            let contador =
-                0;
-
-            for (
-                const url
-                of urlsGlobales
-            ) {
-
-                contador++;
-
-                console.log(
-                    `${contador}. ${url}`
-                );
-            }
-        }
-
-        // =================================================
-        // MOSTRAR TEXTOS
-        // =================================================
-
-        if (
-            textosGlobales.size > 0
-        ) {
-
-            console.log('');
-            console.log(
-                '📝 TEXTOS ENCONTRADOS'
-            );
-
-            console.log(
-                '=========================================='
-            );
-
-            let contador =
-                0;
-
-            for (
-                const texto
-                of textosGlobales
-            ) {
-
-                contador++;
-
-                if (
-                    contador > 30
-                ) {
-                    break;
-                }
-
-                console.log(
-                    `${contador}. ${texto.substring(0, 300)}`
-                );
-            }
-        }
-
-        // =================================================
-        // GUARDAR DATOS JSON
-        // =================================================
-
-        const diagnostico = {
-
-            fecha:
-                new Date().toISOString(),
-
-            url:
-                page.url(),
-
-            titulo:
-                await page.title(),
-
-            ids:
-                Array.from(
-                    idsGlobales
-                ),
-
-            urlsVideo:
-                Array.from(
-                    urlsGlobales
-                ),
-
-            textos:
-                Array.from(
-                    textosGlobales
-                ),
-
-            enlacesVideo,
-
-            videos:
-                informacionFinal.videos,
-
-            respuestasJSON
-        };
-
-        fs.writeFileSync(
-            JSON_FILE,
-            JSON.stringify(
-                diagnostico,
-                null,
-                2
-            ),
-            'utf8'
-        );
-
-        console.log('');
-        console.log(
-            `💾 JSON guardado: ${JSON_FILE}`
-        );
-
-        // =================================================
-        // GUARDAR HTML
-        // =================================================
-
-        const html =
-            await page.content();
-
-        fs.writeFileSync(
-            HTML_FILE,
-            html,
-            'utf8'
-        );
-
-        console.log(
-            `💾 HTML guardado: ${HTML_FILE}`
-        );
-
-        // =================================================
-        // SCREENSHOT
-        // =================================================
+        console.error('');
+        console.error('❌ NO SE ENCONTRÓ NINGUNA URL DE VÍDEO MP4.');
+        console.error('');
+        console.error('TikTok cargó la página, pero no hemos');
+        console.error('podido capturar una respuesta de vídeo.');
+        console.error('');
 
         await page.screenshot({
-            path:
-                PNG_FILE,
-            fullPage:
-                true
+            path: 'tiktok_descarga_diagnostico.png',
+            fullPage: true
         });
 
         console.log(
-            `📸 Captura guardada: ${PNG_FILE}`
+            '📸 Captura guardada: tiktok_descarga_diagnostico.png'
         );
 
-        // =================================================
-        // CONCLUSIÓN
-        // =================================================
+        await browser.close();
 
-        console.log('');
-        console.log(
-            '=========================================='
-        );
-
-        if (
-            idsGlobales.size > 0 &&
-            urlsGlobales.size > 0
-        ) {
-
-            console.log(
-                '🎉 DIAGNÓSTICO POSITIVO'
-            );
-
-            console.log(
-                '✅ TikTok está entregando IDs de vídeo.'
-            );
-
-            console.log(
-                '✅ TikTok está entregando fuentes de vídeo.'
-            );
-
-            console.log(
-                '➡️ Ya podemos pasar a relacionar ID + URL + descarga.'
-            );
-
-        } else if (
-            idsGlobales.size > 0
-        ) {
-
-            console.log(
-                '🟡 IDS ENCONTRADOS, PERO SIN FUENTES'
-            );
-
-            console.log(
-                '➡️ El siguiente paso será obtener la fuente MP4.'
-            );
-
-        } else if (
-            urlsGlobales.size > 0
-        ) {
-
-            console.log(
-                '🟡 FUENTES ENCONTRADAS, PERO SIN IDS'
-            );
-
-            console.log(
-                '➡️ El siguiente paso será relacionar las fuentes con los vídeos.'
-            );
-
-        } else {
-
-            console.log(
-                '🔴 NO SE ENCONTRARON IDS NI FUENTES EN JSON'
-            );
-
-            console.log(
-                '➡️ TikTok está cargando los vídeos de otra manera.'
-            );
-        }
-
-        console.log(
-            '=========================================='
-        );
-
-        console.log('');
-        console.log(
-            '📺 Telegram: NO utilizado'
-        );
-
-        console.log(
-            '💾 CSV: NO modificado'
-        );
-
-        console.log(
-            '⬇️ Descargas: NO realizadas'
-        );
-
-        console.log('');
-
-        await context.close();
-
-        return 0;
-
-    } catch (error) {
-
-        console.error('');
-        console.error(
-            '=========================================='
-        );
-
-        console.error(
-            '❌ ERROR FATAL DEL DIAGNÓSTICO'
-        );
-
-        console.error(
-            '=========================================='
-        );
-
-        console.error(
-            error.message
-        );
-
-        console.error('');
-
-        if (
-            browser
-        ) {
-
-            await browser
-                .close()
-                .catch(() => {});
-        }
-
-        return 1;
-
-    } finally {
-
-        if (
-            browser
-        ) {
-
-            await browser
-                .close()
-                .catch(() => {});
-        }
+        process.exit(1);
     }
-}
 
-// =====================================================
-// EJECUTAR
-// =====================================================
+    // =====================================================
+    // ELEGIR PRIMERA URL
+    // =====================================================
 
-main()
-    .then(
-        codigo => {
-            process.exit(codigo);
-        }
-    )
-    .catch(
-        error => {
+    const urls = Array.from(videoUrls);
 
-            console.error(
-                '❌ ERROR FATAL:',
-                error
-            );
+    const videoUrl = urls[0];
 
-            process.exit(1);
+    console.log('');
+    console.log('✅ SELECCIONANDO PRIMER VÍDEO');
+    console.log('');
+    console.log(videoUrl);
+
+    // =====================================================
+    // DESCARGAR CON CONTEXTO DEL NAVEGADOR
+    // =====================================================
+
+    console.log('');
+    console.log('⬇️ Descargando vídeo...');
+
+    const downloadResponse = await context.request.get(
+        videoUrl,
+        {
+            timeout: 60000
         }
     );
+
+    console.log(
+        `📡 HTTP descarga: ${downloadResponse.status()}`
+    );
+
+    const contentType =
+        downloadResponse.headers()['content-type'] || '';
+
+    console.log(
+        `📦 Content-Type: ${contentType}`
+    );
+
+    if (!downloadResponse.ok()) {
+
+        console.error('');
+        console.error(
+            '❌ LA DESCARGA FALLÓ.'
+        );
+
+        console.error(
+            `HTTP: ${downloadResponse.status()}`
+        );
+
+        await browser.close();
+
+        process.exit(1);
+    }
+
+    const buffer =
+        await downloadResponse.body();
+
+    console.log(
+        `💾 Bytes recibidos: ${buffer.length}`
+    );
+
+    // =====================================================
+    // COMPROBAR TAMAÑO
+    // =====================================================
+
+    if (buffer.length === 0) {
+
+        console.error(
+            '❌ El vídeo descargado está vacío.'
+        );
+
+        await browser.close();
+
+        process.exit(1);
+    }
+
+    // =====================================================
+    // GUARDAR MP4
+    // =====================================================
+
+    fs.writeFileSync(
+        OUTPUT_FILE,
+        buffer
+    );
+
+    const stats =
+        fs.statSync(OUTPUT_FILE);
+
+    const tamañoMB =
+        (
+            stats.size /
+            1024 /
+            1024
+        ).toFixed(2);
+
+    console.log('');
+    console.log('==========================================');
+    console.log('✅ VÍDEO DESCARGADO CORRECTAMENTE');
+    console.log('==========================================');
+
+    console.log(
+        `📁 Archivo: ${OUTPUT_FILE}`
+    );
+
+    console.log(
+        `💾 Tamaño: ${tamañoMB} MB`
+    );
+
+    console.log(
+        `📦 Bytes: ${stats.size}`
+    );
+
+    console.log(
+        `📦 Content-Type: ${contentType}`
+    );
+
+    // =====================================================
+    // COMPROBAR FIRMA MP4
+    // =====================================================
+
+    const primerosBytes =
+        buffer.subarray(0, 32).toString('ascii');
+
+    console.log('');
+    console.log(
+        `🔍 Cabecera archivo: ${primerosBytes}`
+    );
+
+    if (
+        primerosBytes.includes('ftyp')
+    ) {
+        console.log(
+            '✅ La cabecera parece corresponder a un MP4.'
+        );
+    } else {
+
+        console.log(
+            '⚠️ La cabecera no contiene "ftyp".'
+        );
+
+        console.log(
+            '⚠️ Puede que TikTok haya devuelto otro formato.'
+        );
+    }
+
+    // =====================================================
+    // CERRAR
+    // =====================================================
+
+    await browser.close();
+
+    console.log('');
+    console.log('==========================================');
+    console.log('🏁 PRUEBA TERMINADA');
+    console.log('==========================================');
+    console.log('');
+    console.log('👉 NO se utilizó Telegram.');
+    console.log('👉 NO se modificó el CSV.');
+    console.log('👉 El vídeo se creó dentro de videos_temp/.');
+    console.log('');
+
+    process.exit(0);
+}
+
+main().catch(error => {
+
+    console.error('');
+    console.error('==========================================');
+    console.error('❌ ERROR FATAL');
+    console.error('==========================================');
+
+    console.error(error);
+
+    process.exit(1);
+});
