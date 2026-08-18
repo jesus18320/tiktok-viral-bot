@@ -101,6 +101,7 @@
 //         await new Promise(r => setTimeout(r, REFRESH_INTERVAL));
 //     }
 // }
+
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
@@ -111,32 +112,17 @@ import TelegramBot from 'node-telegram-bot-api';
 // =====================================================
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
 const CHANNEL_ID = '@videos_risas';
 
-const MAX_PUBLICACIONES = 1;
-
-const MAX_VIDEOS = 20;
+const REFRESH_INTERVAL = 40000;
+const MAX_VIDEOS = 2;
 
 const CSV_FILE = 'videos_virales.csv';
-
 const DOWNLOAD_DIR = 'videos_temp';
 
-const TIKTOK_URL = 'https://www.tiktok.com/foryou';
-
-// =====================================================
-// COMPROBAR TELEGRAM
-// =====================================================
-
 if (!TOKEN) {
-    console.error('');
-    console.error('❌ No existe TELEGRAM_BOT_TOKEN.');
-    console.error('');
-    console.error(
-        'Añade TELEGRAM_BOT_TOKEN en GitHub Secrets.'
-    );
-    console.error('');
-
+    console.error('❌ Falta TELEGRAM_BOT_TOKEN');
+    console.error('Configúralo en PowerShell antes de arrancar.');
     process.exit(1);
 }
 
@@ -144,245 +130,43 @@ const bot = new TelegramBot(TOKEN, {
     polling: false
 });
 
-// =====================================================
-// CARPETA TEMPORAL
-// =====================================================
-
-fs.mkdirSync(DOWNLOAD_DIR, {
-    recursive: true
-});
-
-// =====================================================
-// NORMALIZAR URL
-// =====================================================
-
-function normalizarUrlTikTok(url) {
-
-    if (!url || typeof url !== 'string') {
-        return '';
-    }
-
-    let resultado = url.trim();
-
-    if (!resultado) {
-        return '';
-    }
-
-    resultado =
-        resultado.split('?')[0];
-
-    resultado =
-        resultado.split('#')[0];
-
-    resultado =
-        resultado.replace(/\/+$/, '');
-
-    resultado =
-        resultado.replace(
-            /^https?:\/\/(www\.)?tiktok\.com/i,
-            'https://www.tiktok.com'
-        );
-
-    return resultado;
+// Crear carpeta temporal
+if (!fs.existsSync(DOWNLOAD_DIR)) {
+    fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
 // =====================================================
-// OBTENER ID TIKTOK
+// VÍDEOS YA PUBLICADOS
 // =====================================================
 
-function obtenerIdTikTok(url) {
+const videosGuardados = new Set();
 
-    if (!url || typeof url !== 'string') {
-        return '';
-    }
+if (fs.existsSync(CSV_FILE)) {
 
-    const limpia =
-        normalizarUrlTikTok(url);
-
-    const coincidencia =
-        limpia.match(
-            /\/video\/(\d+)/i
-        );
-
-    if (!coincidencia) {
-        return '';
-    }
-
-    return coincidencia[1];
-}
-
-// =====================================================
-// HISTORIAL
-// =====================================================
-
-function obtenerHistorial() {
-
-    const urls = new Set();
-    const ids = new Set();
-
-    if (!fs.existsSync(CSV_FILE)) {
-
-        return {
-            urls,
-            ids
-        };
-    }
-
-    try {
-
-        const data =
-            fs.readFileSync(
-                CSV_FILE,
-                'utf8'
-            );
-
-        const lineas =
-            data
-                .split(/\r?\n/)
-                .slice(1);
-
-        for (
-            const linea
-            of lineas
-        ) {
-
-            if (!linea.trim()) {
-                continue;
-            }
-
-            const separador =
-                linea.indexOf(',');
-
-            if (separador === -1) {
-                continue;
-            }
-
-            const url =
-                linea
-                    .slice(separador + 1)
-                    .trim();
-
-            if (!url) {
-                continue;
-            }
-
-            const urlNormalizada =
-                normalizarUrlTikTok(url);
-
-            if (urlNormalizada) {
-                urls.add(
-                    urlNormalizada
-                );
-            }
-
-            const id =
-                obtenerIdTikTok(url);
-
-            if (id) {
-                ids.add(id);
-            }
-        }
-
-    } catch (error) {
-
-        console.error(
-            '⚠️ No se pudo leer el historial:',
-            error.message
-        );
-    }
-
-    return {
-        urls,
-        ids
-    };
-}
-
-// =====================================================
-// NÚMERO SIGUIENTE
-// =====================================================
-
-function obtenerNumeroSiguiente() {
-
-    if (!fs.existsSync(CSV_FILE)) {
-        return 1;
-    }
-
-    const data =
-        fs.readFileSync(
-            CSV_FILE,
-            'utf8'
-        ).trim();
-
-    if (!data) {
-        return 1;
-    }
-
-    const lineas =
-        data.split(/\r?\n/);
-
-    if (lineas.length <= 1) {
-        return 1;
-    }
-
-    let maximo = 0;
-
-    for (
-        const linea
-        of lineas.slice(1)
-    ) {
-
-        const separador =
-            linea.indexOf(',');
-
-        if (separador === -1) {
-            continue;
-        }
-
-        const numero =
-            Number(
-                linea
-                    .slice(0, separador)
-                    .trim()
-            );
-
-        if (
-            Number.isFinite(numero) &&
-            numero > maximo
-        ) {
-
-            maximo = numero;
-        }
-    }
-
-    return maximo + 1;
-}
-
-// =====================================================
-// REGISTRAR VÍDEO
-// =====================================================
-
-function registrarVideo(
-    numero,
-    url
-) {
-
-    if (!fs.existsSync(CSV_FILE)) {
-
-        fs.writeFileSync(
-            CSV_FILE,
-            'Numero,URL\n',
-            'utf8'
-        );
-    }
-
-    const urlNormalizada =
-        normalizarUrlTikTok(url);
-
-    fs.appendFileSync(
+    const data = fs.readFileSync(
         CSV_FILE,
-        `${numero},${urlNormalizada}\n`,
         'utf8'
     );
+
+    const lineas = data
+        .split('\n')
+        .slice(1);
+
+    for (const linea of lineas) {
+
+        const separador = linea.indexOf(',');
+
+        if (separador !== -1) {
+
+            const url = linea
+                .slice(separador + 1)
+                .trim();
+
+            if (url) {
+                videosGuardados.add(url);
+            }
+        }
+    }
 }
 
 // =====================================================
@@ -391,100 +175,42 @@ function registrarVideo(
 
 function limpiarTitulo(titulo) {
 
-    if (
-        !titulo ||
-        typeof titulo !== 'string'
-    ) {
-
+    if (!titulo || typeof titulo !== 'string') {
         return 'Vídeo viral';
     }
 
-    let resultado =
-        titulo.trim();
+    let resultado = titulo.trim();
 
-    resultado =
-        resultado.replace(
-            /\s+/g,
-            ' '
-        );
+    // Eliminar espacios repetidos
+    resultado = resultado.replace(/\s+/g, ' ');
 
-    resultado =
-        resultado.replace(
-            /(\s*#[\wáéíóúñÁÉÍÓÚÑ]+)+\s*$/g,
-            ''
-        ).trim();
+    // Quitar hashtags del final
+    resultado = resultado.replace(
+        /(\s*#[\wáéíóúñÁÉÍÓÚÑ]+)+\s*$/g,
+        ''
+    ).trim();
 
+    // Limitar a 900 caracteres para dejar espacio
+    // suficiente para Telegram
     if (resultado.length > 900) {
-
         resultado =
-            resultado
-                .substring(0, 897)
-                .trim() +
-            '...';
+            resultado.substring(0, 897).trim() + '...';
     }
 
-    return (
-        resultado ||
-        'Vídeo viral'
-    );
+    return resultado || 'Vídeo viral';
 }
 
 // =====================================================
-// OBTENER TÍTULO DE LA PÁGINA
+// ENVIAR VÍDEO A TELEGRAM
 // =====================================================
 
-async function obtenerTitulo(page) {
+async function enviarTelegram(titulo, archivo) {
 
     try {
 
-        const titulo =
-            await page.title();
-
-        if (
-            titulo &&
-            titulo.trim()
-        ) {
-
-            return limpiarTitulo(
-                titulo
-            );
-        }
-
-    } catch {
-        // Continuar
-    }
-
-    return 'Vídeo viral';
-}
-
-// =====================================================
-// ENVIAR TELEGRAM
-// =====================================================
-
-async function enviarTelegram(
-    titulo,
-    archivo
-) {
-
-    try {
-
-        console.log('');
         console.log(
             '📤 Enviando vídeo a Telegram...'
         );
-
-        console.log(
-            `📺 Canal: ${CHANNEL_ID}`
-        );
-
-        if (!fs.existsSync(archivo)) {
-
-            console.error(
-                '❌ El archivo no existe.'
-            );
-
-            return false;
-        }
 
         const tituloLimpio =
             limpiarTitulo(titulo);
@@ -501,19 +227,15 @@ async function enviarTelegram(
         );
 
         console.log(
-            '✅ Vídeo publicado correctamente en Telegram.'
+            '✅ Vídeo publicado correctamente'
         );
 
         return true;
 
     } catch (error) {
 
-        console.error('');
         console.error(
-            '❌ Error al enviar a Telegram:'
-        );
-
-        console.error(
+            '❌ Error al enviar a Telegram:',
             error.message
         );
 
@@ -522,121 +244,50 @@ async function enviarTelegram(
 }
 
 // =====================================================
-// DESCARGAR VÍDEO
+// GUARDAR RESPUESTA DE VÍDEO
 // =====================================================
 
-async function descargarVideo(
-    context,
-    videoUrl,
+async function guardarRespuestaVideo(
+    response,
     archivo
 ) {
 
     try {
 
-        console.log('');
-        console.log(
-            '⬇️ Descargando vídeo...'
-        );
-
-        console.log(
-            `🔗 Fuente: ${videoUrl.substring(0, 200)}`
-        );
-
-        const response =
-            await context.request.get(
-                videoUrl,
-                {
-                    timeout: 60000,
-
-                    headers: {
-                        'User-Agent':
-                            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                            'AppleWebKit/537.36 ' +
-                            '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-                    }
-                }
-            );
-
-        console.log(
-            `📡 HTTP descarga: ${response.status()}`
-        );
-
         if (!response.ok()) {
-
-            console.error(
-                `❌ Error HTTP ${response.status()}`
-            );
-
             return false;
         }
+
+        const headers =
+            response.headers();
 
         const contentType =
-            (
-                response.headers()[
-                    'content-type'
-                ] || ''
-            ).toLowerCase();
+            headers['content-type'] || '';
 
-        console.log(
-            `📦 Content-Type: ${contentType}`
-        );
-
-        if (
-            !contentType.includes('video') &&
-            !videoUrl.includes('mime_type=video')
-        ) {
-
-            console.error(
-                '❌ La respuesta no parece ser un vídeo.'
+        const contentLength =
+            Number(
+                headers['content-length'] || 0
             );
 
+        // Solo aceptar respuestas de vídeo
+        if (!contentType.includes('video/')) {
             return false;
         }
+
+        console.log(
+            `🎥 Respuesta de vídeo detectada: ${contentType}`
+        );
 
         const buffer =
             await response.body();
 
-        console.log(
-            `💾 Bytes recibidos: ${buffer.length}`
-        );
+        if (!buffer || buffer.length < 10000) {
 
-        if (
-            !buffer ||
-            buffer.length < 10000
-        ) {
-
-            console.error(
-                '❌ El vídeo recibido es demasiado pequeño.'
+            console.log(
+                '⚠️ Respuesta demasiado pequeña.'
             );
 
             return false;
-        }
-
-        const primerosBytes =
-            buffer
-                .subarray(0, 32)
-                .toString('ascii');
-
-        console.log(
-            `🔍 Cabecera: ${primerosBytes}`
-        );
-
-        if (
-            !primerosBytes.includes('ftyp')
-        ) {
-
-            console.warn(
-                '⚠️ La cabecera no contiene "ftyp".'
-            );
-
-            console.warn(
-                '⚠️ Se comprobará igualmente el archivo.'
-            );
-        } else {
-
-            console.log(
-                '✅ Cabecera MP4 detectada.'
-            );
         }
 
         fs.writeFileSync(
@@ -644,33 +295,33 @@ async function descargarVideo(
             buffer
         );
 
-        const stats =
-            fs.statSync(
-                archivo
-            );
-
         console.log(
-            `✅ Vídeo guardado: ${(
-                stats.size /
+            `✅ Vídeo guardado: ` +
+            `${(
+                buffer.length /
                 1024 /
                 1024
             ).toFixed(2)} MB`
         );
 
-        console.log(
-            `📁 Archivo: ${archivo}`
-        );
+        if (contentLength > 0) {
+
+            console.log(
+                `📦 Tamaño anunciado: ` +
+                `${(
+                    contentLength /
+                    1024 /
+                    1024
+                ).toFixed(2)} MB`
+            );
+        }
 
         return true;
 
     } catch (error) {
 
-        console.error('');
         console.error(
-            '❌ Error descargando vídeo:'
-        );
-
-        console.error(
+            '❌ Error guardando respuesta:',
             error.message
         );
 
@@ -679,83 +330,134 @@ async function descargarVideo(
 }
 
 // =====================================================
-// CAPTURAR VÍDEOS DE TIKTOK
+// CAPTURAR VÍDEOS
 // =====================================================
 
 async function capturarVirales() {
 
-    console.log('');
     console.log(
-        '🚀 Buscando vídeos en TikTok...'
+        '\n🚀 Buscando vídeos virales...'
     );
 
-    console.log(
-        `🔗 ${TIKTOK_URL}`
-    );
-
-    let browser = null;
-    let context = null;
+    let browser;
+    let context;
 
     try {
 
-        // =================================================
-        // HISTORIAL
-        // =================================================
+        browser = await chromium.launch({
+            headless: true
+        });
 
-        const historial =
-            obtenerHistorial();
+        context = await browser.newContext({
 
-        console.log('');
-        console.log(
-            `💾 URLs guardadas: ${historial.urls.size}`
-        );
+            userAgent:
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+                'AppleWebKit/537.36 ' +
+                '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
 
-        console.log(
-            `🆔 IDs guardados: ${historial.ids.size}`
-        );
+            viewport: {
+                width: 1280,
+                height: 900
+            },
 
-        // =================================================
-        // CHROMIUM
-        // =================================================
-
-        console.log('');
-        console.log(
-            '🌐 Iniciando Chromium...'
-        );
-
-        browser =
-            await chromium.launch({
-                headless: true
-            });
-
-        context =
-            await browser.newContext({
-
-                viewport: {
-                    width: 1280,
-                    height: 900
-                },
-
-                locale: 'es-ES',
-
-                timezoneId:
-                    'Europe/Madrid',
-
-                userAgent:
-                    'Mozilla/5.0 (X11; Linux x86_64) ' +
-                    'AppleWebKit/537.36 ' +
-                    '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-            });
+            locale: 'es-ES'
+        });
 
         const page =
             await context.newPage();
 
         // =================================================
-        // CAPTURAR RESPUESTAS DE RED
+        // VÍDEOS DETECTADOS
         // =================================================
 
-        const videoUrls =
-            new Set();
+        const videos = new Map();
+
+        // =================================================
+        // RESPUESTAS DE LA API DE TIKTOK
+        // =================================================
+
+        page.on(
+            'response',
+            async response => {
+
+                const url =
+                    response.url();
+
+                if (
+                    !url.includes(
+                        '/api/recommend/item_list'
+                    )
+                ) {
+                    return;
+                }
+
+                try {
+
+                    const json =
+                        await response.json();
+
+                    if (
+                        !Array.isArray(
+                            json?.itemList
+                        )
+                    ) {
+                        return;
+                    }
+
+                    for (
+                        const item
+                        of json.itemList
+                    ) {
+
+                        if (
+                            item?.author?.uniqueId &&
+                            item?.id
+                        ) {
+
+                            const videoUrl =
+                                `https://www.tiktok.com/@` +
+                                `${item.author.uniqueId}` +
+                                `/video/${item.id}`;
+
+                            // Obtener el título/descripción
+                            const titulo =
+                                item.desc ||
+                                item.description ||
+                                'Vídeo viral';
+
+                            if (
+                                !videos.has(
+                                    videoUrl
+                                )
+                            ) {
+
+                                videos.set(
+                                    videoUrl,
+                                    {
+                                        url: videoUrl,
+
+                                        title:
+                                            limpiarTitulo(
+                                                titulo
+                                            ),
+
+                                        videoResponse:
+                                            null
+                                    }
+                                );
+                            }
+                        }
+                    }
+
+                } catch {
+                    // Ignorar respuestas que no sean JSON
+                }
+            }
+        );
+
+        // =================================================
+        // RESPUESTAS DE VÍDEO
+        // =================================================
 
         page.on(
             'response',
@@ -763,117 +465,54 @@ async function capturarVirales() {
 
                 try {
 
-                    const url =
-                        response.url();
-
                     const headers =
                         response.headers();
 
                     const contentType =
-                        (
-                            headers[
-                                'content-type'
-                            ] || ''
-                        ).toLowerCase();
-
-                    const isTikTok =
-                        url.includes(
-                            'tiktokcdn'
-                        ) ||
-                        url.includes(
-                            'tiktok.com'
-                        ) ||
-                        url.includes(
-                            'tiktokv.com'
-                        );
-
-                    const pareceVideo =
-                        contentType.includes(
-                            'video/mp4'
-                        ) ||
-                        contentType.includes(
-                            'video/'
-                        ) ||
-                        url.includes(
-                            'mime_type=video'
-                        );
-
-                    const noEsAudio =
-                        !contentType.includes(
-                            'audio/'
-                        ) &&
-                        !url.includes(
-                            'mime_type=audio'
-                        );
+                        headers[
+                            'content-type'
+                        ] || '';
 
                     if (
-                        isTikTok &&
-                        pareceVideo &&
-                        noEsAudio
+                        !contentType.includes(
+                            'video/'
+                        )
+                    ) {
+                        return;
+                    }
+
+                    if (!response.ok()) {
+                        return;
+                    }
+
+                    /*
+                     * Guardamos la respuesta real
+                     * recibida por Chromium.
+                     */
+
+                    for (
+                        const video
+                        of videos.values()
                     ) {
 
                         if (
-                            !videoUrls.has(url)
+                            !video.videoResponse
                         ) {
 
-                            videoUrls.add(
-                                url
-                            );
-
-                            console.log('');
-                            console.log(
-                                '🎥 URL DE VÍDEO ENCONTRADA:'
-                            );
+                            video.videoResponse =
+                                response;
 
                             console.log(
-                                url.substring(
-                                    0,
-                                    250
-                                )
+                                '🎥 Vídeo de red capturado'
                             );
 
-                            console.log(
-                                `📊 Total URLs válidas: ${videoUrls.size}`
-                            );
+                            break;
                         }
                     }
 
                 } catch {
-                    // No detener el bot
+                    // Ignorar errores
                 }
-            }
-        );
-
-        // =================================================
-        // CONSOLA TIKTOK
-        // =================================================
-
-        page.on(
-            'console',
-            msg => {
-
-                if (
-                    msg.type() === 'error'
-                ) {
-
-                    console.log(
-                        `⚠️ TikTok: ${msg.text().substring(0, 300)}`
-                    );
-                }
-            }
-        );
-
-        // =================================================
-        // ERRORES DE PÁGINA
-        // =================================================
-
-        page.on(
-            'pageerror',
-            error => {
-
-                console.log(
-                    `⚠️ Error JavaScript: ${error.message}`
-                );
             }
         );
 
@@ -881,112 +520,18 @@ async function capturarVirales() {
         // ABRIR TIKTOK
         // =================================================
 
-        console.log('');
         console.log(
             '🌐 Abriendo TikTok...'
         );
 
-        const response =
-            await page.goto(
-                TIKTOK_URL,
-                {
-                    waitUntil:
-                        'domcontentloaded',
+        await page.goto(
+            'https://www.tiktok.com/foryou',
+            {
+                waitUntil:
+                    'domcontentloaded',
 
-                    timeout: 60000
-                }
-            );
-
-        if (response) {
-
-            console.log(
-                `📡 HTTP inicial: ${response.status()}`
-            );
-        }
-
-        console.log(
-            `📍 URL actual: ${page.url()}`
-        );
-
-        console.log(
-            `📄 Título: ${await page.title()}`
-        );
-
-        // =================================================
-        // ESPERA INICIAL
-        // =================================================
-
-        console.log('');
-        console.log(
-            '⏳ Esperando vídeos de TikTok...'
-        );
-
-        await page.waitForTimeout(
-            10000
-        );
-
-        console.log(
-            '✅ Primera espera terminada.'
-        );
-
-        // =================================================
-        // SCROLL
-        // =================================================
-
-        console.log('');
-        console.log(
-            '📜 Haciendo scroll...'
-        );
-
-        for (
-            let i = 1;
-            i <= 8;
-            i++
-        ) {
-
-            console.log(
-                `📜 Scroll ${i}/8`
-            );
-
-            await page.evaluate(
-                () => {
-
-                    window.scrollBy({
-                        top:
-                            window.innerHeight *
-                            0.9,
-
-                        behavior:
-                            'smooth'
-                    });
-                }
-            );
-
-            await page.waitForTimeout(
-                3000
-            );
-
-            console.log(
-                `   🎥 URLs capturadas: ${videoUrls.size}`
-            );
-
-            const cantidadVideos =
-                await page.locator(
-                    'video'
-                ).count();
-
-            console.log(
-                `   🎥 Elementos <video>: ${cantidadVideos}`
-            );
-        }
-
-        // =================================================
-        // ESPERA FINAL
-        // =================================================
-
-        console.log('');
-        console.log(
-            '⏳ Esperando respuestas finales...'
+                timeout: 60000
+            }
         );
 
         await page.waitForTimeout(
@@ -994,115 +539,116 @@ async function capturarVirales() {
         );
 
         // =================================================
-        // RESULTADO
-        // =================================================
-
-        console.log('');
-        console.log(
-            '=========================================='
-        );
-        console.log(
-            '📊 RESULTADO DE CAPTURA'
-        );
-        console.log(
-            '=========================================='
-        );
-
-        console.log(
-            `🎥 URLs de vídeo válidas: ${videoUrls.size}`
-        );
-
-        if (
-            videoUrls.size === 0
-        ) {
-
-            console.error('');
-            console.error(
-                '❌ NO SE ENCONTRÓ NINGÚN VÍDEO.'
-            );
-
-            await page.screenshot({
-                path:
-                    'tiktok_diagnostico.png',
-
-                fullPage: true
-            });
-
-            console.log(
-                '📸 Diagnóstico guardado: tiktok_diagnostico.png'
-            );
-
-            return 0;
-        }
-
-        // =================================================
-        // CONVERTIR A ARRAY
-        // =================================================
-
-        const urls =
-            Array.from(
-                videoUrls
-            ).slice(
-                0,
-                MAX_VIDEOS
-            );
-
-        console.log('');
-        console.log(
-            `🎯 Candidatos disponibles: ${urls.length}`
-        );
-
-        // =================================================
-        // NÚMERO
-        // =================================================
-
-        let contador =
-            obtenerNumeroSiguiente();
-
-        let publicaciones = 0;
-
-        // =================================================
-        // TÍTULO
-        // =================================================
-
-        const titulo =
-            await obtenerTitulo(
-                page
-            );
-
-        console.log(
-            `📝 Título: ${titulo}`
-        );
-
-        // =================================================
-        // PROCESAR CANDIDATOS
+        // SCROLL
         // =================================================
 
         for (
-            const videoUrl
-            of urls
+            let i = 0;
+            i < 6;
+            i++
         ) {
 
+            await page.mouse.wheel(
+                0,
+                5000
+            );
+
+            await page.waitForTimeout(
+                1500
+            );
+        }
+
+        // Dar tiempo a las peticiones
+        await page.waitForTimeout(
+            5000
+        );
+
+        // =================================================
+        // LISTA DE VÍDEOS NUEVOS
+        // =================================================
+
+        const lista =
+            Array
+                .from(videos.values())
+                .filter(video => {
+
+                    return !videosGuardados.has(
+                        video.url
+                    );
+                })
+                .slice(
+                    0,
+                    MAX_VIDEOS
+                );
+
+        console.log(
+            `🎯 Nuevos vídeos encontrados: ${lista.length}`
+        );
+
+        // =================================================
+        // CSV
+        // =================================================
+
+        let csv;
+
+        if (
+            fs.existsSync(
+                CSV_FILE
+            )
+        ) {
+
+            csv =
+                fs.readFileSync(
+                    CSV_FILE,
+                    'utf8'
+                );
+
+        } else {
+
+            csv =
+                'Numero,URL\n';
+        }
+
+        let contador =
+            Math.max(
+                0,
+                csv.trim()
+                    .split('\n')
+                    .length - 1
+            ) + 1;
+
+        // =================================================
+        // PROCESAR VÍDEOS
+        // =================================================
+
+        for (
+            let i = 0;
+            i < lista.length;
+            i++
+        ) {
+
+            const video =
+                lista[i];
+
+            console.log(
+                `\n📹 Procesando vídeo ` +
+                `${i + 1}/${lista.length}`
+            );
+
+            console.log(
+                `📝 Título: ${video.title}`
+            );
+
             if (
-                publicaciones >=
-                MAX_PUBLICACIONES
+                !video.videoResponse
             ) {
 
-                break;
+                console.log(
+                    '⚠️ No se capturó la respuesta de vídeo.'
+                );
+
+                continue;
             }
-
-            console.log('');
-            console.log(
-                '=========================================='
-            );
-
-            console.log(
-                `🎬 Procesando candidato ${publicaciones + 1}/${MAX_PUBLICACIONES}`
-            );
-
-            console.log(
-                `🔗 ${videoUrl.substring(0, 250)}`
-            );
 
             const nombreArchivo =
                 `video_${Date.now()}_${contador}.mp4`;
@@ -1113,96 +659,63 @@ async function capturarVirales() {
                     nombreArchivo
                 );
 
-            // =================================================
-            // DESCARGAR
-            // =================================================
+            console.log(
+                '⬇️ Guardando vídeo desde Playwright...'
+            );
 
             const descargado =
-                await descargarVideo(
-                    context,
-                    videoUrl,
+                await guardarRespuestaVideo(
+                    video.videoResponse,
                     archivo
                 );
 
             if (!descargado) {
 
                 console.log(
-                    '⏭️ Candidato descartado.'
+                    '❌ No se pudo guardar el vídeo.'
                 );
-
-                if (
-                    fs.existsSync(
-                        archivo
-                    )
-                ) {
-
-                    fs.unlinkSync(
-                        archivo
-                    );
-                }
 
                 continue;
             }
 
             // =================================================
-            // TELEGRAM
+            // ENVIAR A TELEGRAM
             // =================================================
 
             const enviado =
                 await enviarTelegram(
-                    titulo,
+                    video.title,
                     archivo
                 );
 
-            if (!enviado) {
+            // =================================================
+            // SOLO GUARDAR SI SE PUBLICÓ
+            // =================================================
 
-                console.error(
-                    '❌ No se registrará el vídeo porque Telegram no confirmó el envío.'
+            if (enviado) {
+
+                csv +=
+                    `${contador},${video.url}\n`;
+
+                videosGuardados.add(
+                    video.url
                 );
 
-                if (
-                    fs.existsSync(
-                        archivo
-                    )
-                ) {
+                contador++;
 
-                    fs.unlinkSync(
-                        archivo
-                    );
-                }
+                fs.writeFileSync(
+                    CSV_FILE,
+                    csv,
+                    'utf8'
+                );
 
-                continue;
+                console.log(
+                    '💾 Vídeo registrado en CSV.'
+                );
             }
 
             // =================================================
-            // REGISTRAR
-            // =================================================
-
-            /*
-             * Como las URLs de vídeo de la CDN no son
-             * las URLs normales /video/ID de TikTok,
-             * registramos la URL de la página actual
-             * como referencia del historial.
-             */
-
-            const urlReferencia =
-                page.url();
-
-            registrarVideo(
-                contador,
-                urlReferencia
-            );
-
-            console.log('');
-            console.log(
-                `💾 Vídeo registrado como publicación ${contador}`
-            );
-
-            contador++;
-            publicaciones++;
-
-            // =================================================
-            // BORRAR TEMPORAL
+            // BORRAR ARCHIVO TEMPORAL
             // =================================================
 
             if (
@@ -1219,40 +732,18 @@ async function capturarVirales() {
                     '🗑️ Archivo temporal eliminado.'
                 );
             }
-
-            console.log('');
-            console.log(
-                `✅ Publicación ${publicaciones}/${MAX_PUBLICACIONES} completada.`
-            );
         }
 
-        console.log('');
         console.log(
-            '=========================================='
+            '\n✅ Ciclo terminado.'
         );
-
-        console.log(
-            `🏁 Ciclo terminado. Publicados: ${publicaciones}/${MAX_PUBLICACIONES}`
-        );
-
-        console.log(
-            '=========================================='
-        );
-
-        return publicaciones;
 
     } catch (error) {
 
-        console.error('');
         console.error(
-            '❌ Error capturando vídeos:'
-        );
-
-        console.error(
+            '❌ Error capturando vídeos:',
             error.message
         );
-
-        return 0;
 
     } finally {
 
@@ -1273,14 +764,13 @@ async function capturarVirales() {
 }
 
 // =====================================================
-// MAIN
+// LOOP
 // =====================================================
 
-async function main() {
+async function loop() {
 
-    console.log('');
     console.log(
-        '🤖 TIKTOK VIRAL BOT INICIADO'
+        '🤖 Bot iniciado correctamente'
     );
 
     console.log(
@@ -1288,44 +778,40 @@ async function main() {
     );
 
     console.log(
-        `🎯 Máximo: ${MAX_PUBLICACIONES} vídeo por ejecución`
+        `⏱️ Cada ${REFRESH_INTERVAL / 1000} segundos`
     );
 
-    console.log(
-        '📡 TikTok: captura de vídeos mediante respuestas de red'
-    );
+    while (true) {
 
-    console.log(
-        '📅 GitHub Actions controla cuándo se ejecuta.'
-    );
-
-    const publicaciones =
         await capturarVirales();
 
-    console.log('');
-    console.log(
-        `🏁 BOT TERMINADO. Publicaciones realizadas: ${publicaciones}`
-    );
+        console.log(
+            `\n⏳ Esperando ` +
+            `${REFRESH_INTERVAL / 1000} segundos...`
+        );
 
-    process.exit(0);
+        await new Promise(
+            resolve => {
+
+                setTimeout(
+                    resolve,
+                    REFRESH_INTERVAL
+                );
+            }
+        );
+    }
 }
 
-main().catch(error => {
+// =====================================================
+// ARRANCAR
+// =====================================================
 
-    console.error('');
-    console.error(
-        '=========================================='
-    );
-
-    console.error(
-        '❌ ERROR FATAL'
-    );
+loop().catch(error => {
 
     console.error(
-        '=========================================='
+        '❌ Error fatal:',
+        error
     );
-
-    console.error(error);
 
     process.exit(1);
 });
