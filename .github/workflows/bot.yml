@@ -48,6 +48,4 @@ jobs:
 
           git commit -m "Actualizar vídeos publicados"
 
-          git pull --rebase origin main
-
           git push origin main
