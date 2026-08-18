@@ -16,6 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
 
       - name: Instalar Node.js
         uses: actions/setup-node@v4
@@ -35,17 +36,56 @@ jobs:
         run: node main.js
 
       - name: Guardar vídeos publicados
+        shell: bash
         run: |
+          set -e
+
+          echo "======================================"
+          echo "💾 GUARDANDO VÍDEOS PUBLICADOS"
+          echo "======================================"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          echo ""
+          echo "📂 Estado inicial:"
+          git status --short
+
+          # Solo añadimos el CSV
           git add videos_virales.csv
 
+          # Comprobar si realmente hay cambios
           if git diff --cached --quiet; then
-            echo "No hay cambios que guardar."
+            echo ""
+            echo "ℹ️ No hay cambios nuevos en videos_virales.csv."
             exit 0
           fi
 
+          echo ""
+          echo "📝 Cambios detectados:"
+          git diff --cached -- videos_virales.csv
+
+          echo ""
+          echo "💾 Creando commit..."
+
           git commit -m "Actualizar vídeos publicados"
 
-          git push origin main
+          echo ""
+          echo "🌐 Descargando cambios del repositorio remoto..."
+
+          git fetch origin main
+
+          echo ""
+          echo "🔄 Reaplicando cambios sobre origin/main..."
+
+          git rebase origin/main
+
+          echo ""
+          echo "📤 Subiendo cambios a GitHub..."
+
+          git push origin HEAD:main
+
+          echo ""
+          echo "======================================"
+          echo "✅ videos_virales.csv guardado correctamente"
+          echo "======================================"
