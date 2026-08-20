@@ -51,10 +51,11 @@ jobs:
           echo "📂 Estado inicial:"
           git status --short
 
-          # Solo añadimos el CSV
+          echo ""
+          echo "📌 Preparando videos_virales.csv..."
+
           git add videos_virales.csv
 
-          # Comprobar si realmente hay cambios
           if git diff --cached --quiet; then
             echo ""
             echo "ℹ️ No hay cambios nuevos en videos_virales.csv."
@@ -71,12 +72,12 @@ jobs:
           git commit -m "Actualizar vídeos publicados"
 
           echo ""
-          echo "🌐 Descargando cambios del repositorio remoto..."
+          echo "🌐 Actualizando repositorio remoto..."
 
           git fetch origin main
 
           echo ""
-          echo "🔄 Reaplicando cambios sobre origin/main..."
+          echo "🔄 Reaplicando el commit sobre origin/main..."
 
           git rebase origin/main
 
