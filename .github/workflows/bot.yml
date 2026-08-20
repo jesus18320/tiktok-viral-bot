@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
+    # 10:00 y 18:00 hora de España peninsular durante el horario de verano
     - cron: '0 8 * * *'
     - cron: '0 16 * * *'
 
