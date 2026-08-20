@@ -3,7 +3,10 @@ name: TikTok Viral Bot
 on:
   workflow_dispatch:
 
-# Permitir que GitHub Actions pueda modificar el repositorio
+  schedule:
+    - cron: '0 8 * * *'
+    - cron: '0 16 * * *'
+
 permissions:
   contents: write
 
