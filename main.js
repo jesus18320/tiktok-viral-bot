@@ -114,7 +114,7 @@ import TelegramBot from 'node-telegram-bot-api';
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHANNEL_ID = '@videos_risas';
 
-const MAX_VIDEOS = 2;
+const MAX_VIDEOS = 5;
 
 const CSV_FILE = 'videos_virales.csv';
 const DOWNLOAD_DIR = 'videos_temp';
