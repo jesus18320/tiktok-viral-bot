@@ -3,6 +3,10 @@ name: TikTok Viral Bot
 on:
   workflow_dispatch:
 
+# Permitir que GitHub Actions pueda modificar el repositorio
+permissions:
+  contents: write
+
 concurrency:
   group: tiktok-viral-bot
   cancel-in-progress: false
